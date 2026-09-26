@@ -10,3 +10,18 @@ it('hides names until qualification and refreshes board after native form submis
  expect(nodes.get('arcade-score-form').hidden).toBe(true);await done;expect(nodes.get('arcade-score-form').hidden).toBe(false)
  const preventDefault=vi.fn();await handlers.get('arcade-score-formsubmit')({preventDefault});expect(preventDefault).toHaveBeenCalled();expect(setItem).toHaveBeenCalledWith('last-engineer.arcade.name.v1','<b>Player</b>');client.dispose()
 })
+
+it('initializes hero and results boards with GET only and text-safe names',async()=>{
+ const nodes=new Map()
+ for(const prefix of ['menu','arcade']){
+  nodes.set(`${prefix}-leaderboard-status`,{textContent:''})
+  nodes.set(`${prefix}-leaderboard-list`,{rows:[],replaceChildren(){this.rows=[]},appendChild(row){this.rows.push(row)}})
+ }
+ const fetch=vi.fn(async()=>({ok:true,json:async()=>({scores:[{name:'<b>Leader</b>',score:12345}]})}))
+ vi.stubGlobal('fetch',fetch);vi.stubGlobal('BroadcastChannel',undefined)
+ const client=initArcadeScore({document:{getElementById:id=>nodes.get(id),createElement:()=>({textContent:''}),addEventListener(){},removeEventListener(){}}})
+ await vi.waitFor(()=>expect(nodes.get('menu-leaderboard-list').rows).toHaveLength(1))
+ expect(nodes.get('menu-leaderboard-list').rows[0].textContent).toContain('<b>Leader</b>')
+ expect(nodes.get('arcade-leaderboard-list').rows).toHaveLength(1)
+ expect(fetch).toHaveBeenCalledTimes(1);expect(fetch.mock.calls[0][1].method).toBeUndefined();client.dispose()
+})

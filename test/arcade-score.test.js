@@ -68,3 +68,14 @@ it('ignores a previous run qualification response',async()=>{
  a.client.begin();resolve(ok({qualified:true,score:10100,scoreVersion:2,scores:[]}));await old
  expect(a.client.state().status).toBe('hidden');expect(a.client.state().summary).toBe(null)
 })
+
+it('loads and deduplicates the hero board before any run token exists',async()=>{
+ let resolve;const result=new Promise(r=>resolve=r)
+ const request=vi.fn(()=>result),client=createScoreClient({request})
+ const first=client.refreshBoard(),second=client.refreshBoard()
+ expect(request).toHaveBeenCalledTimes(1)
+ expect(request.mock.calls[0][0]).toBe('/api/games/last-engineer/scores?scoreVersion=2')
+ resolve(ok({scores:[{name:'Leader',score:12345}]}));await Promise.all([first,second])
+ expect(client.state()).toMatchObject({status:'hidden',summary:null,boardStatus:'ready',scores:[{name:'Leader',score:12345}]})
+ expect(request.mock.calls.every(([,options])=>options.method !== 'POST')).toBe(true)
+})

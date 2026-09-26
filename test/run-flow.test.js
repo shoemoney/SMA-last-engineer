@@ -69,6 +69,7 @@ describe('wave and time ranking', () => {
   })
 
   it('gives waves precedence and faster clears a bounded bonus', () => {
+    expect(runScore(1, 19.999999999999506)).toBe(runScore(1, 20.000000000000146))
     expect(runScore(0, 0)).toBe(0)
     expect(runScore(3, 145.25)).toBe(30123)
     expect(runScore(1, 10)).toBeGreaterThan(runScore(1, 20))

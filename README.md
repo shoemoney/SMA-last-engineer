@@ -28,14 +28,16 @@ Fight through an overrun subway in a browser survival shooter built with Three.j
 | Feature | What it brings to a run |
 | :--- | :--- |
 | Subway survival | Wave combat, station traversal, pickups, and the Conductor boss |
-| Solid cover | Walls and columns block melee damage, including cover reached during a swing |
+| Solid cover | Walls and columns block melee and bile projectiles; ranged enemies reposition when cover blocks their view |
 | Three weapons | Pistol, rifle, and shotgun with weapon mods and distinct handling |
 | Weapon mods | Silencer, armor piercing, incendiary rounds, and laser sight; explosive rounds are removed |
 | Wave supplies | At most one health heart and one armor chestplate per wave, at random vacant platform locations; old supplies are replaced and never respawn on a timer |
-| Precision scoring | Hit-zone bonuses, timed kill chains, wave-clear rewards, and a no-damage wave bonus |
+| Run flow | Animated start screen, 30-second preparation, and 10-second wave breaks; start each wave early when ready |
+| Run score | Completed waves take priority, with a bounded bonus for faster combat time; hit zones and kill chains still drive combat feedback |
+| Pace controls | Pause and resume, plus 0.5×, 1×, 1.5×, and 2× simulation speeds |
 | Combat feedback | Headshot impacts, delayed casing sounds, a dedicated quiet suppressed pistol shot, and spoken award callouts synchronized with animated headings |
 | Jeremy's voice | Narration, hurt reactions, “OHHH THAT’S THE STUFF!!!” for health, and “Armor Baby!” for armor; **Mute Jeremy** leaves weapons and award announcements active |
-| Shared leaderboard | Optional name entry after a run, connected to the arcade's per-game leaderboard |
+| Shared leaderboard | Top ten in the game and arcade; only qualifying runs prompt for an optional name |
 | Rendering | WebGPU first, a WebGL2 fallback, and low/medium/high quality tiers |
 | Sharing | Custom favicon, touch icon, and Open Graph artwork |
 
@@ -53,9 +55,13 @@ Designed for a desktop browser with a keyboard and mouse.
 | R | Reload |
 | 1 / 2 / 3 | Select a weapon slot |
 | Mouse wheel | Cycle weapons |
-| Escape | Release the browser's captured pointer |
+| Escape | Pause and release the captured pointer |
+| E | Start the wave early during preparation or a wave break |
+| [ / ] | Decrease or increase simulation speed |
 
-Click the game again to resume mouse look. Crouching is disabled in the current gameplay rules.
+**Start** captures the pointer and begins a 30-second preparation period. Each cleared wave gives a 10-second break. Press **E** while the pointer is captured, or use **Start Wave** in the control panel, to skip the remaining wait.
+
+Losing focus or pointer capture pauses the run. Use **Resume** to capture the pointer and continue. The panel also has slower and faster buttons. Speed changes simulation pace; they do not rewind the run. Crouching is disabled in the current gameplay rules.
 
 ## Quick start
 
@@ -95,7 +101,11 @@ The canonical link and `og:url` remain set in `index.html`; update those separat
 
 ## Arcade high scores
 
-At the end of a run, enter a **1–24 character display name** and submit, or start another run. The arcade homepage shows the game's **ten highest scores**, rather than the ten most recent submissions.
+At the end of a run, the server checks whether your result reaches the **top ten**. A qualifying result offers optional entry of a **1–24 character display name**. Complete at least one wave to qualify. The leaderboard appears in the start screen, results screen, and arcade homepage.
+
+The version 2 score gives each completed wave **10,000 points**, plus a speed bonus capped at **9,999 points**. The bonus is `floor(completedWaves × 6000 / max(1, combatSeconds))`. Combat time is rounded to milliseconds before this calculation. Preparation, wave breaks, train arrival, and pause time do not increase combat time. Combat simulation time keeps the formula consistent across supported speed settings.
+
+Legacy version 1 scores remain stored separately and do not compete with version 2 results. See the [run and API contract](CONTRACT.md) for clock definitions, tie handling, and payloads.
 
 The deployed arcade owns the shared API and persistent SQLite database. **This repository contains the game and score client, not the arcade server.** A standalone static host does not create a leaderboard database automatically.
 
@@ -110,28 +120,32 @@ sequenceDiagram
     Player->>Game: Start run
     Game->>API: POST /api/games/last-engineer/runs
     API-->>Game: Run token
-    Player->>Game: Finish run and enter name
+    Player->>Game: Finish run
+    Game->>API: POST /api/games/last-engineer/qualify
+    API-->>Game: Final score and top-ten eligibility
+    Player->>Game: Enter name if qualified
     Game->>API: POST /api/games/last-engineer/scores
-    API->>DB: Save accepted submission
+    API->>DB: Recheck eligibility and save
     API-->>Game: Confirm score
     Home->>API: GET /api/games/last-engineer/scores
     API->>DB: Read highest scores
     API-->>Home: Leaderboard entries
 ```
 
-**Scores are client-reported.** Run tokens and duplicate-submission handling do not constitute authoritative anti-cheat verification. Keep database credentials and server secrets out of the game bundle.
+**Run metrics are client-reported.** The server computes the score and checks eligibility, but run tokens and duplicate-submission handling do not constitute authoritative anti-cheat verification. Keep database credentials and server secrets out of the game bundle.
 
 <details>
 <summary><strong>Score API contract and retry behavior</strong></summary>
 
 | Request | Payload or response |
 | :--- | :--- |
-| `POST /api/games/last-engineer/runs` | Send `{}`; receive a `runToken` |
-| `POST /api/games/last-engineer/scores` | Send `{runToken,name,score,wave,kills,headshots,duration}`; duration is in seconds |
-| Successful score submission | `{accepted:true,score:{id,name,score,createdAt}}` |
-| `GET /api/games/last-engineer/scores` | `{scores:[{id,name,score,createdAt}],order:"highest"}` |
+| `POST /api/games/last-engineer/runs` | Send `{scoreVersion:2}`; receive a `runToken` |
+| `POST /api/games/last-engineer/qualify` | Send `{runToken,scoreVersion:2,wave,kills,headshots,duration,completedWaves,combatSeconds}`; receive computed score and eligibility |
+| `POST /api/games/last-engineer/scores` | Send `{runToken,scoreVersion:2,name}` after qualification; the server uses the frozen metrics |
+| Successful score submission | `{accepted:true,rank,scoreVersion:2,score:{id,name,score,scoreVersion,completedWaves,combatSeconds,createdAt}}` |
+| `GET /api/games/last-engineer/scores` | Current version's highest scores; `?scoreVersion=1` reads the legacy board |
 
-The client freezes the run summary before submission. If a response is lost, it keeps the original payload and locks the name so a retry can check the same attempt. Rate-limited requests show a retry message; closed or expired runs require a new run. A response is only treated as success when it confirms the submitted name and score with a valid ID and timestamp.
+The client freezes the run summary before qualification. The server freezes those metrics and rechecks the cutoff when the name is submitted. A result can fall below the cutoff while the form is open. If a response is lost, it keeps the original payload and locks the name so a retry can check the same attempt. Rate-limited requests show a retry message; closed or expired runs require a new run. A response is only treated as success when it confirms the submitted name and score with a valid ID and timestamp.
 
 The last successfully submitted display name is remembered in local storage. Local career progress and audio preferences also use local storage; none of those values substitutes for the shared leaderboard.
 

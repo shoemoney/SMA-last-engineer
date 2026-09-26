@@ -1871,7 +1871,7 @@ export class Game {
   setPaused(paused) {
     this.paused = Boolean(paused)
     if (this.paused) {
-      this.input?.reset?.()
+      this.input?.resetTransient?.()
       this.weapons.setTrigger(false)
     }
   }
