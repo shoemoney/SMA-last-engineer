@@ -1,0 +1,32 @@
+{
+  "name": "sma-last-engineer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "ShoeMoney: Last Engineer - a lone engineer survives an overrun subway. Three.js + WebGPU.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --port 4173 --strictPort",
+    "test": "vitest run",
+    "verify:frame": "node verify/frame.mjs --webgpu",
+    "soak": "node verify/soak.mjs",
+    "verify": "npm run build && npm test && npm run soak -- 25 && npm run verify:frame && npm run verify:fps && npm run verify:e2e",
+    "verify:frame:webgl": "node verify/frame.mjs",
+    "verify:frame:headed": "node verify/frame.mjs --webgpu --headed",
+    "verify:fps": "node verify/fps.mjs",
+    "verify:e2e": "node verify/e2e.mjs"
+  },
+  "dependencies": {
+    "three": "^0.182.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.56.0",
+    "vite": "^7.1.0",
+    "vitest": "^3.2.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "fsevents@2.3.3": true
+  }
+}

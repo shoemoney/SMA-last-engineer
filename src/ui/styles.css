@@ -1,0 +1,838 @@
+/* ShoeMoney: Last Engineer — subway industrial. Amber signage, cyan platform light, blood. */
+
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=JetBrains+Mono:wght@700&display=swap');
+
+:root {
+  --amber: #ffb43a;
+  --amber-dim: #7a4f12;
+  --cyan: #3ad7ff;
+  --blood: #e02424;
+  --blood-deep: #6b0f0f;
+  --steel: #8b96a4;
+  --ink: #05070b;
+  --ink-2: #0c1119;
+  --bone: #e8ecf2;
+  --hud-pad: clamp(14px, 2.2vw, 34px);
+  --stroke: 2px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { font-size: 16px; }
+
+html, body {
+  font-size: 20px;
+  height: 100%;
+  overflow: hidden;
+  background: var(--ink);
+  color: var(--bone);
+  font-family: 'Barlow Condensed', 'Helvetica Neue', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  cursor: default;
+  user-select: none;
+}
+
+#viewport {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: var(--ink);
+}
+
+/* ══════════════ HUD ══════════════ */
+
+.hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+  font-variant-numeric: tabular-nums;
+}
+.hud[hidden] { display: none; }
+
+.hud__vignette {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 120% 90% at 50% 50%, transparent 40%, rgba(0,0,0,.55) 100%),
+    radial-gradient(ellipse 90% 70% at 50% 50%, transparent 55%, var(--dmg, transparent) 100%);
+  transition: background .18s ease-out;
+  mix-blend-mode: multiply;
+}
+.hud__vignette.hurt { --dmg: rgba(190, 20, 20, .62); }
+
+/* crosshair: four ticks + a dot, spreads with fire */
+.hud__crosshair {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 40px; height: 40px;
+  transform: translate(-50%, -50%);
+  /* Above the damage numbers. They spawn at the hit point, and on a centred shot
+     that IS the reticle; the layer that paints last wins, and #damage-numbers is
+     declared after #crosshair in index.html. The one element you aim with does
+     not lose that fight. */
+  z-index: 4;
+  --spread: 0px;
+}
+.hud__crosshair i {
+  position: absolute;
+  left: 50%; top: 50%;
+  /* A bone tick behind a soft 4 px halo measured 1.3:1 against the lit SHOEMONEY
+     signboard at the stair mouth — the reticle was effectively GONE on every pale
+     surface in the level. A blur cannot hold an edge against a bright backdrop;
+     only a hard one can. Pure white core, a 1 px black ring that survives white
+     concrete, and the soft halo kept behind it for the dark tunnel frames. */
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.9), 0 0 4px rgba(0,0,0,.7);
+  opacity: 1;
+  transition: transform .06s linear;
+}
+.hud__crosshair i:nth-child(1),
+.hud__crosshair i:nth-child(2) { width: var(--stroke); height: 9px; margin-left: -1px; }
+.hud__crosshair i:nth-child(3),
+.hud__crosshair i:nth-child(4) { width: 9px; height: var(--stroke); margin-top: -1px; }
+.hud__crosshair i:nth-child(1) { transform: translate(-50%, calc(-100% - 5px - var(--spread))); }
+.hud__crosshair i:nth-child(2) { transform: translate(-50%, calc(5px + var(--spread))); }
+.hud__crosshair i:nth-child(3) { transform: translate(calc(-100% - 5px - var(--spread)), -50%); }
+.hud__crosshair i:nth-child(4) { transform: translate(calc(5px + var(--spread)), -50%); }
+.hud__crosshair b {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 3px; height: 3px;
+  margin: -1.5px 0 0 -1.5px;
+  border-radius: 50%;
+  /* The pip keeps its amber — it is the aim point and the house colour — but it
+     gets the same hard ring, so it reads on white tile AND inside the orange
+     muzzle bloom, where an amber dot on an amber flash was invisible. */
+  background: var(--amber);
+  box-shadow: 0 0 0 1px rgba(0,0,0,.9), 0 0 6px var(--amber);
+}
+.hud__crosshair.laser b { background: var(--blood); box-shadow: 0 0 0 1px rgba(0,0,0,.9), 0 0 10px var(--blood); }
+
+.hud__hitmarker {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 26px; height: 26px;
+  transform: translate(-50%, -50%) rotate(45deg) scale(.6);
+  opacity: 0;
+  border: var(--stroke) solid var(--bone);
+  border-radius: 2px;
+}
+.hud__hitmarker.show { animation: hit .22s ease-out; }
+.hud__hitmarker.kill { border-color: var(--blood); }
+@keyframes hit {
+  0% { opacity: 1; transform: translate(-50%,-50%) rotate(45deg) scale(.45); }
+  100% { opacity: 0; transform: translate(-50%,-50%) rotate(45deg) scale(1.15); }
+}
+
+/* Directional hit arc — an 80 degree wedge on the crosshair, rotated by the yaw
+   between the player's facing and the attacker, decaying on DAMAGE_FLASH's own
+   0.5714 s clock. The centred vignette says you were bitten; this says by what. */
+.hud__threat {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 260px; height: 260px;
+  margin: -130px 0 0 -130px;
+  opacity: 0;
+  transform: rotate(var(--threat-yaw, 0deg));
+  background: conic-gradient(from -40deg,
+    rgba(246,63,63,.55) 0deg 80deg, transparent 80deg 360deg);
+  -webkit-mask-image: radial-gradient(circle, transparent 56%, #000 70%, #000 95%, transparent 100%);
+  mask-image: radial-gradient(circle, transparent 56%, #000 70%, #000 95%, transparent 100%);
+}
+.hud__threat.show { animation: threat .5714s linear forwards; }
+@keyframes threat { from { opacity: 1; } to { opacity: 0; } }
+
+/* top bar */
+.hud__topbar {
+  position: absolute;
+  top: var(--hud-pad); left: var(--hud-pad); right: var(--hud-pad);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.wave { display: flex; align-items: baseline; gap: 10px; }
+.wave__label {
+  font-size: 18px; letter-spacing: .34em; color: var(--steel);
+  text-transform: uppercase;
+}
+.wave__num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: clamp(32px, 4vw, 52px);
+  line-height: .9;
+  color: var(--amber);
+  text-shadow: 0 0 22px rgba(255,180,58,.55);
+}
+.wave__left { font-size: 18px; letter-spacing: .12em; color: var(--steel); }
+
+.score { text-align: right; display: flex; flex-direction: column; }
+.score__val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: clamp(22px, 2.6vw, 34px);
+  color: var(--bone);
+  line-height: 1;
+}
+.score__label { font-size: 18px; letter-spacing: .34em; color: var(--steel); }
+
+/* centre announcements */
+.hud__banner {
+  position: absolute;
+  top: 21%; left: 0; right: 0;
+  text-align: center;
+  font-size: clamp(30px, 5.2vw, 72px);
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  opacity: 0;
+  color: var(--amber);
+  text-shadow: 0 4px 30px rgba(0,0,0,.95), 0 0 40px rgba(255,180,58,.35);
+}
+.hud__banner.show { animation: banner 2.6s cubic-bezier(.2,.8,.2,1); }
+/* --blood on the Conductor's 0x1c1418 body is 2.08:1. #ff6a52 clears the 3:1 floor,
+   and 15% lifts the name off his chest without reaching the wave/score row. */
+.hud__banner.danger {
+  top: 15%;
+  color: #ff6a52;
+  -webkit-text-stroke: 1px rgba(0,0,0,.9);
+  text-shadow: 0 4px 30px #000, 0 2px 4px #000, 0 0 48px rgba(255,106,82,.55);
+}
+@keyframes banner {
+  0% { opacity: 0; transform: translateY(18px) scale(.94); letter-spacing: .3em; }
+  12% { opacity: 1; transform: none; letter-spacing: .1em; }
+  78% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-10px); }
+}
+
+.hud__subtitle {
+  position: absolute;
+  bottom: 17%; left: 50%;
+  transform: translateX(-50%);
+  max-width: min(74ch, 84vw);
+  text-align: center;
+  font-size: clamp(20px, 1.7vw, 23px);
+  line-height: 1.35;
+  padding: 7px 18px;
+  color: var(--bone);
+  background: rgba(3,5,9,.62);
+  border-left: 3px solid var(--amber);
+  text-shadow: 0 2px 8px #000;
+  opacity: 0;
+  transition: opacity .2s;
+}
+.hud__subtitle.show { opacity: 1; }
+
+/* vitals */
+.hud__bottomleft {
+  position: absolute;
+  left: var(--hud-pad); bottom: var(--hud-pad);
+  display: flex; align-items: flex-end; gap: 14px;
+}
+
+.portrait { position: relative; width: clamp(76px, 8vw, 116px); aspect-ratio: 1; }
+.portrait img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+  filter: contrast(1.12) saturate(.94);
+  clip-path: polygon(0 0, 100% 0, 100% 84%, 84% 100%, 0 100%);
+}
+.portrait__frame {
+  position: absolute; inset: 0;
+  border: var(--stroke) solid var(--amber-dim);
+  clip-path: polygon(0 0, 100% 0, 100% 84%, 84% 100%, 0 100%);
+  box-shadow: inset 0 0 24px rgba(0,0,0,.8);
+}
+.portrait.critical { animation: pulse .9s infinite; }
+@keyframes pulse { 50% { filter: brightness(1.35) sepia(.4) hue-rotate(-28deg); } }
+
+.vitals { display: flex; flex-direction: column; gap: 7px; width: clamp(186px, 22vw, 320px); }
+
+.bar {
+  position: relative;
+  height: 28px;
+  background: rgba(8,11,17,.82);
+  border: var(--stroke) solid rgba(139,150,164,.38);
+  overflow: hidden;
+}
+.bar__fill {
+  position: absolute; inset: 0;
+  width: 100%;
+  transform-origin: left;
+  transition: transform .14s ease-out, background .3s;
+}
+/* Flat, and exactly HUD.healthColorHex / healthOverfillColorHex / armorColorHex.
+   The old gradients started at luminance 27, so a full bar's left half read as
+   empty and disagreed with the condition-tinted portrait frame 20 px away.
+   --bar-tint lets hud.js hand the bar the HEALTH.CONDITIONS tint it already
+   paints on .portrait__frame, so the two readouts can never diverge. */
+.bar--health .bar__fill { background: var(--bar-tint, #e03a3a); }
+.bar--health.overfilled .bar__fill { background: var(--bar-tint, #ff9a9a); }
+.bar--armor .bar__fill { background: #2fd3e0; }
+.bar--armor.overfilled .bar__fill { background: #c0faff; }
+.bar__num {
+  position: absolute;
+  right: 8px; top: 50%;
+  transform: translateY(-50%);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 18px;
+  text-shadow: 0 1px 3px #000;
+}
+
+/* weapon */
+.hud__bottomright {
+  position: absolute;
+  right: var(--hud-pad); bottom: var(--hud-pad);
+  text-align: right;
+}
+.weapon__name {
+  display: block;
+  font-size: 18px; letter-spacing: .28em;
+  color: var(--steel);
+  text-transform: uppercase;
+}
+.weapon__ammo { font-family: 'JetBrains Mono', monospace; line-height: 1; }
+.weapon__ammo b { font-size: clamp(34px, 4.4vw, 56px); color: var(--bone); }
+.weapon__ammo i { font-style: normal; font-size: 22px; color: var(--steel); margin: 0 3px; }
+.weapon__ammo span { font-size: 22px; color: var(--steel); }
+.weapon.dry .weapon__ammo b { color: var(--blood); animation: pulse .5s infinite; }
+
+.mods { display: flex; gap: 6px; justify-content: flex-end; margin-top: 8px; }
+.mods .mod {
+  font-size: 18px; letter-spacing: .18em;
+  padding: 4px 8px;
+  border: 1px solid currentColor;
+  text-transform: uppercase;
+}
+.mod--silencer { color: var(--steel); }
+.mod--armorpiercing { color: var(--cyan); }
+.mod--incendiary { color: #ff7a1a; }
+.mod--explosive { color: var(--amber); }
+.mod--lasersight { color: var(--blood); }
+
+/* floating damage numbers */
+.hud__damagenumbers { position: absolute; inset: 0; overflow: hidden; }
+.dmgnum {
+  position: absolute;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 18px;
+  font-weight: 700;
+  color: #ffffff;
+  text-shadow: 0 2px 6px #000;
+  animation: float 1s ease-out forwards;
+  will-change: transform, opacity;
+}
+/* FX.DAMAGE_NUMBER.colorHeadHex / colorChestHex / colorBodyHex. --blood is
+   luminance 76, so the headshot — the one hit you most want confirmed — used to
+   render darker than a body hit. */
+.dmgnum.head { color: #ff6150; font-size: 27px; }
+.dmgnum.chest { color: #ffd33f; font-size: 22px; }
+.dmgnum.burn { color: #ff7a1a; font-size: 18px; }
+@keyframes float {
+  0% { opacity: 0; transform: translateY(6px); }
+  14% { opacity: 1; transform: translateY(0) scale(1.1); }
+  100% { opacity: 0; transform: translateY(-52px); }
+}
+
+/* ══════════════ SCREENS ══════════════ */
+
+.screen {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  /* A SCRIM, never a plate. game.js stages a lit platform with the car docked
+     behind the title card; an opaque fill here is the whole difference between
+     a menu and a black rectangle with a logo on it. */
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 42%, rgba(255,180,58,.09), transparent 70%),
+    linear-gradient(180deg, rgba(5,7,11,.90) 0%, rgba(12,17,25,.58) 45%, rgba(5,7,11,.92) 100%);
+  /* NO backdrop-filter HERE. It cost 1.77 SECONDS PER FRAME.
+     Measured: menu at 0.5fps (p50 1804ms) with `backdrop-filter: blur(3px)`,
+     36.8fps (p50 33.3ms) without it — a 3,600x difference from one line. Over a
+     live hardware canvas the compositor reads back and re-blurs the whole screen
+     every frame, so the cost is paid forever, not once.
+     The defocus is bought back below with a scrim that costs nothing. */
+}
+.screen[hidden] { display: none; }
+.screen::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(0deg, rgba(255,255,255,.028) 0 1px, transparent 1px 3px);
+  pointer-events: none;
+}
+
+/* ══════════════ DEATH ══════════════
+
+   Its own place, not the title card with a red word on it.
+
+   The menu is a warm amber room with the station crisp behind it. This is the
+   cold end of the same platform, seen through a head that is going out: tunnel
+   light gone blue overhead, arterial red pooled at your back, an EXIT sign
+   burning green somewhere you never reached.
+
+   The screen failed the frame gate at 3 distinct hues because it was the menu's
+   grade with the amber swapped for red — one warm family over a station it had
+   scrimmed out at 0.90/0.50/0.90 alpha. The mid band is now 0.22, so the
+   platform's own sodium and cyan reach the lens and count; the blue, the blood
+   and the exit green are three more, and they are three separate PLACES in the
+   frame rather than one tint smeared across it. */
+
+.screen--over {
+  background:
+    /* The platform light still burning over you — a tall ellipse hung off the top
+       edge, so it falls as a SHAFT down the middle of frame instead of tinting a
+       band across it. It is also what separates the type from the station. */
+    radial-gradient(ellipse 72% 76% at 50% -12%, rgba(58,166,220,.46), rgba(22,72,112,.18) 46%, transparent 80%),
+    /* the pool you are lying in — kept LOW. At 52% height and .52 alpha it was a
+       gel over the whole picture, and 72% of the frame's colour landed in four
+       adjacent red bins: the screen read as tinted rather than lit, which is the
+       exact failure the amber version was guilty of, in a different hue. */
+    radial-gradient(ellipse 118% 38% at 50% 110%, rgba(184,14,26,.50), rgba(70,6,12,.20) 56%, transparent 82%),
+    /* The scrim itself is navy, not neutral, so the middle of the frame is cold
+       even where neither light reaches it. */
+    linear-gradient(180deg,
+      rgba(5,14,26,.70) 0%, rgba(7,18,32,.30) 34%,
+      rgba(8,16,30,.28) 58%, rgba(12,5,9,.70) 86%, rgba(4,4,8,.86) 100%);
+  /* Twice the title card's defocus, and no more. At 12px the platform stopped
+     being a platform and became pink wool — a blur deep enough to destroy the
+     subject is not depth, it is a smudge. 7px still reads as columns, a lit car
+     and a wet floor, seen by someone who is not getting up. */
+  /* Same story as .screen — a 7px backdrop blur here was worse than the menu's 3px.
+     The navy scrim above already carries the mood; the defocus is not worth a
+     multi-second frame on the screen a player stares at after dying. */
+}
+
+/* The EXIT sign you did not reach — off frame low-left, with its bounce off the
+   far wall high-right. The one light in this station that is not amber. */
+.screen--over::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    /* A hard core rendered as a literal green dot — a light is its falloff, not
+       its centre. One ellipse with a bright middle and a long tail instead. */
+    radial-gradient(ellipse 15% 19% at 3% 82%, rgba(110,255,170,.55), rgba(34,198,116,.26) 44%, rgba(14,80,46,.10) 70%, transparent 86%),
+    radial-gradient(ellipse 28% 24% at 93% 14%, rgba(38,214,122,.18), transparent 74%);
+  animation: exitlamp 5.2s ease-in-out infinite;
+}
+@keyframes exitlamp { 0%, 100% { opacity: .82; } 50% { opacity: 1; } }
+
+/* The menu's scanlines are neutral white; these are lit by the same blue. */
+.screen--over::after {
+  background:
+    radial-gradient(ellipse 82% 66% at 50% 48%, transparent 44%, rgba(2,6,12,.58) 100%),
+    repeating-linear-gradient(0deg, rgba(168,214,255,.04) 0 1px, transparent 1px 3px);
+}
+
+/* Blood, with the cold light catching the edge of the word.
+   Smaller than the title card's 148 px: this headline carries an epitaph, a
+   six-cell grid and a record row under it inside 720 px, and at full size the
+   stack ran to 672 of them with 24 px of air top and bottom. */
+.screen--over .title--dead {
+  font-size: clamp(46px, 9.4vw, 116px);
+  letter-spacing: .05em;
+  color: #ff2f2f;
+  -webkit-text-stroke: 1px rgba(150,196,230,.34);
+  text-shadow: 0 0 96px rgba(224,36,36,.55), 0 0 30px rgba(140,10,16,.85), 0 6px 0 #000;
+}
+
+.over__epitaph {
+  margin-top: -6px;
+  font-size: clamp(20px, 1.7vw, 20px);
+  letter-spacing: .3em;
+  text-transform: uppercase;
+  color: #8fb2ca;
+  text-shadow: 0 0 20px rgba(58,150,200,.4), 0 2px 10px #000;
+}
+
+/* The run is read under dead fluorescent. Amber belongs to the screen the player
+   came from, and to the one they get back to if they press the button. */
+.screen--over .runstats { margin-top: 14px; }
+.screen--over .stat__val {
+  font-size: clamp(22px, 2.7vw, 34px);
+  color: #cfe4f2;
+  text-shadow: 0 0 20px rgba(120,190,235,.28), 0 2px 8px #000;
+}
+.screen--over .stat__label { color: #7590a6; }
+
+/* .screen is place-items:center, so .screen__inner shrinks to fit its widest
+   child. On the death screen that is "YOU DIED" at 419 px — so .runstats and
+   .over__record resolved their width:100% against 420 and never reached their
+   own 560 cap. A 420 px content column in a 1280 px frame: 33%, against the
+   menu's 59%, which means the composition SHRANK at the exact moment the night
+   is supposed to land hardest. Pin the column instead of inheriting a headline's
+   width. Border-box with 24 px padding, so 620 gives 572 px of content — enough
+   for both caps and for the six stat cells to breathe.
+   The menu sets its own 753 px column from the controls strip. Leave it alone. */
+.screen--over .screen__inner { width: min(620px, 92vw); }
+
+/* ── The record row ──
+   A green cell among five cold ones is still a number in a grid. The one good
+   thing that can happen on a death screen gets its own rule, its own fill and
+   its own glow, and keeps the same footprint on a bad night so the layout never
+   jumps — only the light does. --record is set from MENU.PALETTE by screens.js. */
+.over__record {
+  --record: #5ef08a;
+  --record-glow: rgba(94,240,138,.5);
+  /* ONE column, not two. With `auto auto` the second row centred the PAIR
+     [value | sub] as a group, so "FIRST RECORD" shoved "WAVE 7" 53 px left of the
+     axis every other element on this screen is centred on — the one celebratory
+     moment in the game, rendering visibly crooked. Worse, baseline alignment sat
+     13 px caption and 38 px number on one line, so it read as the single string
+     "WAVE 7 FIRST RECORD". Three stacked lines, one centre: kicker / value / sub. */
+  display: grid;
+  grid-template-columns: auto;
+  align-items: baseline;
+  justify-content: center;
+  row-gap: 5px;
+  width: 100%;
+  max-width: 560px;
+  margin-top: 18px;
+  padding: 13px 26px;
+  border: var(--stroke) solid rgba(139,150,164,.26);
+  border-left-width: 5px;
+  background: rgba(10,16,24,.42);
+}
+.over__record-kicker {
+  font-size: 18px;
+  letter-spacing: .34em;
+  text-transform: uppercase;
+  color: var(--steel);
+}
+.over__record-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: clamp(24px, 3vw, 38px);
+  line-height: 1;
+  color: var(--bone);
+}
+.over__record-sub {
+  margin-top: 2px;
+  font-size: 18px;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--steel);
+}
+
+.over__record.is-record {
+  border-color: var(--record);
+  background: linear-gradient(90deg, rgba(94,240,138,.24), rgba(94,240,138,.08) 64%, rgba(10,16,24,.42));
+  animation: record 2.8s ease-in-out infinite;
+}
+.over__record.is-record .over__record-kicker {
+  color: var(--record);
+  text-shadow: 0 0 16px var(--record-glow);
+}
+.over__record.is-record .over__record-val {
+  color: var(--record);
+  text-shadow: 0 0 34px var(--record-glow), 0 0 10px var(--record-glow);
+}
+.over__record.is-record .over__record-sub { color: #9fe7bb; }
+@keyframes record {
+  0%, 100% { box-shadow: 0 0 40px -10px var(--record-glow), inset 0 0 36px -20px var(--record-glow); }
+  50% { box-shadow: 0 0 64px -4px var(--record-glow), inset 0 0 50px -14px var(--record-glow); }
+}
+
+/* An amber button is the menu leaking in. Back on the platform is the bloody
+   door; main menu is the quiet one. */
+.screen--over .btn { border-color: rgba(139,150,164,.4); }
+.screen--over .btn:hover { border-color: #ff6a52; color: #ff9a8a; letter-spacing: .3em; }
+.screen--over .btn--primary {
+  border-color: #ff4040;
+  color: #ff8272;
+  box-shadow: 0 0 0 0 rgba(224,36,36,.4);
+}
+.screen--over .btn--primary:hover {
+  background: rgba(224,36,36,.12);
+  box-shadow: 0 0 34px rgba(224,36,36,.3);
+}
+
+/* ── 8. The title screen breathes: MENU.SWEEP and MENU.VIGNETTE, finally wired ── */
+
+/* MENU.SWEEP — five 36 px blood bands on a 40 px pitch, alpha 0.05 * (1 - |i-2|/2.5),
+   drifting the full height in 9 s. rgb(89,5,8) is colorRgb [0.35,0.02,0.03] x 255. */
+.screen--menu::before {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; top: 0;
+  height: 200px;
+  pointer-events: none;
+  background: linear-gradient(180deg,
+    rgba(89,5,8,.01) 0 36px, transparent 36px 40px,
+    rgba(89,5,8,.03) 40px 76px, transparent 76px 80px,
+    rgba(89,5,8,.05) 80px 116px, transparent 116px 120px,
+    rgba(89,5,8,.03) 120px 156px, transparent 156px 160px,
+    rgba(89,5,8,.01) 160px 196px, transparent 196px 200px);
+  animation: sweep 9s linear infinite;
+}
+@keyframes sweep {
+  from { transform: translateY(-200px); }
+  to { transform: translateY(100vh); }
+}
+
+/* MENU.VIGNETTE — thicknessFraction 0.18 top and bottom, alpha 0.35 +/- 0.15 on a
+   0.6 rad/s pulse, so opacity swings .4 to 1 over 2*PI/0.6 seconds. */
+.screen--menu::after {
+  background:
+    linear-gradient(180deg, rgba(0,0,0,.5) 0, transparent 18%, transparent 82%, rgba(0,0,0,.5) 100%),
+    repeating-linear-gradient(0deg, rgba(255,255,255,.028) 0 1px, transparent 1px 3px);
+  animation: vig 10.47s ease-in-out infinite;
+}
+@keyframes vig {
+  0%, 100% { opacity: .4; }
+  50% { opacity: 1; }
+}
+
+.screen__inner {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  padding: 24px;
+  max-width: 940px;
+  text-shadow: 0 2px 18px rgba(0,0,0,.9);
+}
+
+/* The shield's body is near-black on a near-black plate, so only the blue '$'
+   survived. The amber halo separates it and ties the mark to the title; the tight black shadow keeps the edge crisp. */
+.logo {
+  width: clamp(96px, 11vw, 152px);
+  opacity: 1;
+  filter: drop-shadow(0 0 30px rgba(255,180,58,.32)) drop-shadow(0 3px 8px rgba(0,0,0,.9));
+}
+
+.title {
+  font-size: clamp(52px, 12vw, 148px);
+  font-weight: 700;
+  letter-spacing: .04em;
+  line-height: .86;
+  color: var(--bone);
+  text-shadow: 0 0 60px rgba(255,180,58,.22), 0 6px 0 #000;
+}
+.title span { color: var(--amber); text-shadow: 0 0 46px rgba(255,180,58,.7), 0 6px 0 #000; }
+.title--dead { color: var(--blood); text-shadow: 0 0 70px rgba(224,36,36,.5), 0 6px 0 #000; }
+
+.tagline {
+  font-size: clamp(20px, 2vw, 22px);
+  letter-spacing: .12em;
+  /* The game's one line of voice was the DIMMEST text on the title screen: --steel
+     at luminance 0.300, measured 2.44:1 where it crosses the lit concrete column
+     and never above 4.71:1 anywhere across its width — under the 4.5:1 floor at
+     every point, for 22 px non-bold. It also shared --steel with the stat labels
+     and the WASD hints, flattening three tiers of hierarchy into one colour.
+     0.670 luminance takes the worst window to ~5:1 and the rest past 6:1, and
+     lifts the strapline off the tier that is meant to sit UNDER it. --steel itself
+     stays: the controls and stat labels measure 4.0-13.5:1 and are correctly
+     subordinate. This is the line that sells the premise; let it be read. */
+  color: #ccd6e2;
+  text-transform: uppercase;
+}
+
+.btn {
+  pointer-events: auto;
+  font-family: inherit;
+  font-size: clamp(20px, 1.7vw, 21px);
+  font-weight: 600;
+  letter-spacing: .24em;
+  text-transform: uppercase;
+  padding: 15px 42px;
+  color: var(--bone);
+  background: transparent;
+  border: var(--stroke) solid rgba(139,150,164,.45);
+  cursor: pointer;
+  transition: all .16s ease-out;
+}
+.btn:hover { border-color: var(--amber); color: var(--amber); letter-spacing: .3em; }
+.btn:active { transform: translateY(1px); }
+.btn--primary {
+  border-color: var(--amber);
+  color: var(--amber);
+  box-shadow: 0 0 0 0 rgba(255,180,58,.4);
+}
+.btn--primary:hover { background: rgba(255,180,58,.1); box-shadow: 0 0 34px rgba(255,180,58,.28); }
+
+/* Both cell counts are fixed by code, so the column counts are too: menu.js
+   always feeds 5 career stats, screens.js always feeds 6 run stats. auto-fit
+   resolved to 4 at 1280 px and left the remainder alone against the left edge. */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px 26px;
+  margin-top: 6px;
+  width: 100%;
+  max-width: 760px;
+}
+.runstats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px 26px;
+  margin-top: 34px;
+  width: 100%;
+  max-width: 560px;
+}
+.stat { display: flex; flex-direction: column; gap: 2px; }
+.stat__val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: clamp(20px, 2.4vw, 30px);
+  color: var(--amber);
+}
+.stat__label { font-size: 18px; letter-spacing: .26em; color: var(--steel); text-transform: uppercase; }
+
+.controls {
+  display: flex; flex-wrap: wrap; gap: 8px 20px;
+  justify-content: center;
+  margin-top: 14px;
+  font-size: 18px;
+  letter-spacing: .1em;
+  color: var(--steel);
+  text-transform: uppercase;
+}
+kbd {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 18px;
+  padding: 3px 7px;
+  margin-right: 4px;
+  color: var(--bone);
+  border: 1px solid rgba(139,150,164,.4);
+  border-bottom-width: 2px;
+  background: rgba(255,255,255,.04);
+}
+
+.loadbar {
+  width: min(420px, 70vw);
+  height: 3px;
+  background: rgba(139,150,164,.2);
+  overflow: hidden;
+}
+.loadbar__fill {
+  height: 100%;
+  width: 0;
+  background: var(--amber);
+  box-shadow: 0 0 16px var(--amber);
+  transition: width .25s ease-out;
+}
+.loadtext { font-size: 18px; letter-spacing: .3em; color: var(--steel); text-transform: uppercase; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+
+.title--engineer { display: flex; flex-direction: column; gap: 16px; }
+.title--engineer .title__brand {
+  font-size: 24px;
+  line-height: 1.5;
+  letter-spacing: .16em;
+  color: var(--bone);
+  text-shadow: 0 2px 8px #000;
+}
+.title--engineer .title__game {
+  font-size: clamp(42px, 8.5vw, 108px);
+  line-height: 1;
+  letter-spacing: .02em;
+}
+.screen--menu { overflow-y: auto; }
+.screen--menu .screen__inner { width: min(940px, 100%); margin: auto; }
+.screen--menu .tagline { font-size: 20px; line-height: 1.5; letter-spacing: .04em; }
+.screen--menu .btn { font-size: 20px; }
+.screen--menu .controls { font-size: 18px; line-height: 1.5; letter-spacing: .03em; }
+.screen--menu kbd, .screen--menu .stat__label { font-size: 18px; letter-spacing: .04em; }
+@media (max-width: 600px) {
+  .screen--menu .screen__inner { padding: 24px 18px; gap: 16px; }
+  .screen--menu .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .screen--menu .stats .stat:last-child { grid-column: 1 / -1; }
+  .screen--menu .btn { width: 100%; padding: 14px 12px; letter-spacing: .08em; }
+}
+
+.screen { overflow-y: auto; }
+.screen__inner { margin: auto; }
+.controls, .tagline, .over__epitaph { line-height: 1.5; }
+.wave__label, .score__label, .stat__label { letter-spacing: .08em; }
+.mods { flex-wrap: wrap; max-width: 300px; }
+.hud__subtitle { line-height: 1.5; }
+@media (max-width: 700px) {
+  .wave { flex-wrap: wrap; gap: 4px 8px; max-width: 70%; }
+  .wave__left { flex-basis: 100%; }
+  .portrait { width: 54px; }
+  .hud__bottomleft { gap: 8px; bottom: 18px; }
+  .vitals { width: min(39vw, 180px); }
+  .hud__bottomright { bottom: 104px; }
+  .hud__subtitle { bottom: 200px; max-width: calc(100vw - 28px); width: max-content; }
+  .runstats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+  .screen--over .screen__inner { width: 100%; padding: 24px 18px; }
+  .screen--over .btn { font-size: 20px; width: 100%; padding: 14px 12px; letter-spacing: .06em; }
+}
+
+.bar__label {
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 1;
+  font-size: 18px;
+  line-height: 1.2;
+}
+.bar__label, .bar__num {
+  padding: 0 3px;
+  color: #fff;
+  background: rgba(3, 5, 9, .8);
+}
+
+.jeremy-mute {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: fit-content;
+  min-height: 44px;
+  margin: 16px auto 0;
+  padding: 4px 12px;
+  font-size: 20px;
+  line-height: 1.5;
+  color: #f5ead9;
+  cursor: pointer;
+}
+.jeremy-mute input {
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  accent-color: var(--amber);
+  cursor: pointer;
+}
+.jeremy-mute:focus-within {
+  outline: 2px solid var(--amber);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.arcade-score {
+  display: grid;
+  gap: 12px;
+  margin: 24px 0;
+  text-align: left;
+  font-size: 20px;
+  line-height: 1.5;
+}
+.arcade-score[hidden] { display: none; }
+.arcade-score label, .arcade-score input, .arcade-score p { font-size: 20px; }
+.arcade-score input {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 48px;
+  padding: 10px 14px;
+  color: var(--bone);
+  background: #10151d;
+  border: 1px solid var(--steel);
+  border-radius: 4px;
+}
+.arcade-score input:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
+.arcade-score p { margin: 0; color: var(--bone); }
+.arcade-score .btn { margin: 0; }
+.arcade-score :disabled { cursor: default; opacity: .7; }

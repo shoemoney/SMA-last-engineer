@@ -1,0 +1,541 @@
+/* ============================================================================
+   hud-extra.css — the two moments the readout was missing: the Conductor fight,
+   and the reward for shooting straight.
+
+   src/ui/hud.js loads this as a raw string and injects it into <head> at init.
+   That is deliberate, and it buys two things: src/ui/styles.css stays a
+   single-owner file, and this sheet lands last in the cascade no matter how the
+   bundler orders its chunks, so an override here can never lose a coin toss.
+
+   Everything that MEANS something arrives as a custom property set from
+   rules.js by hud.js — the Conductor's own emissive red, the hit-zone colours
+   the floating damage numbers already use, SCORE.comboWindow. What is written
+   down here is geometry and motion, in the same register as styles.css.
+   ============================================================================ */
+
+/* Fallbacks only. hud.js overwrites every one of these from rules.js on init;
+   they exist so this sheet is legible on its own and degrades to something
+   sane if it is ever loaded without the JS. */
+.hud {
+  --boss: #ff2008;
+  --boss-rgb: 255, 32, 8;
+  --boss-seg: 20;
+  --row-life: 5s;
+  --zone-head: #ff6150;
+}
+
+/* ══════════════ THE CONDUCTOR ══════════════ */
+
+.bossbar {
+  position: absolute;
+  top: 2.4%;
+  left: 50%;
+  width: min(50vw, 680px);
+  transform: translateX(-50%);
+  display: none;
+  --frac: 0;
+  --ghost: 0;
+  --armor: 0;
+}
+.bossbar.live { display: block; }
+
+/* The bar is pinned over the Conductor's own hat, and a two-metre silhouette
+   moves underneath it. Type on a scrim survives that; type on nothing does not. */
+.bossbar::before {
+  content: '';
+  position: absolute;
+  inset: -22px -30% -30px;
+  background:
+    linear-gradient(180deg, rgba(3, 5, 9, .9) 0%, rgba(3, 5, 9, .66) 58%, rgba(3, 5, 9, 0) 100%),
+    radial-gradient(ellipse 46% 130% at 50% 30%, rgba(var(--boss-rgb), .22), rgba(4, 6, 10, 0) 72%);
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 16%, #000 84%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 16%, #000 84%, transparent 100%);
+  pointer-events: none;
+}
+
+.bossbar__head {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 7px;
+}
+
+/* The archetype, stated. Five things come off that train and only one of them
+   has a bar; the chip is what says which one you are looking at. */
+.bossbar__tag {
+  flex: none;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: .3em;
+  margin-right: -.3em;
+  text-transform: uppercase;
+  padding: 3px 9px 2px;
+  color: var(--boss);
+  background: rgba(var(--boss-rgb), .14);
+  border: 1px solid rgba(var(--boss-rgb), .62);
+  text-shadow: 0 0 12px rgba(var(--boss-rgb), .9);
+}
+
+.bossbar__name {
+  flex: 1;
+  text-align: center;
+  font-size: clamp(20px, 2.2vw, 30px);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: .4em;
+  margin-right: -.4em;
+  text-transform: uppercase;
+  color: var(--bone);
+  -webkit-text-stroke: 1px rgba(0, 0, 0, .85);
+  text-shadow: 0 0 26px rgba(var(--boss-rgb), .8), 0 2px 5px #000;
+}
+
+.bossbar__hp {
+  flex: none;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 18px;
+  color: var(--boss);
+  text-shadow: 0 0 12px rgba(var(--boss-rgb), .9), 0 2px 4px #000;
+}
+
+/* The Conductor spawns at the armour hard cap and it decays from there, so this
+   is a second real resource and not decoration. Cyan, exactly as the player's
+   own armour bar, because it is the same quantity. */
+.bossbar__armor {
+  position: relative;
+  height: 5px;
+  margin: 0 18px 4px;
+  background: rgba(8, 11, 17, .55);
+  overflow: hidden;
+  display: none;
+}
+.bossbar__armor.live { display: block; }
+.bossbar__armor i {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(-45deg,
+    rgba(58, 215, 255, .62) 0 3px, rgba(58, 215, 255, .12) 3px 7px);
+  transform-origin: left;
+  transform: scaleX(var(--armor));
+  transition: transform .14s ease-out;
+}
+
+/* The rail takes the hit shake so the track can keep its own critical pulse —
+   one element cannot run two animation shorthands. */
+.bossbar__rail { position: relative; }
+.bossbar.hit .bossbar__rail { animation: boss-shake .17s ease-out; }
+@keyframes boss-shake {
+  0%, 100% { transform: translateX(0); }
+  22% { transform: translateX(-4px); }
+  58% { transform: translateX(3px); }
+}
+
+.bossbar__track {
+  position: relative;
+  height: 28px;
+  background: rgba(8, 11, 17, .88);
+  border: var(--stroke) solid rgba(var(--boss-rgb), .48);
+  overflow: hidden;
+  clip-path: polygon(18px 0, 100% 0, calc(100% - 18px) 100%, 0 100%);
+  box-shadow: 0 0 34px rgba(var(--boss-rgb), .3), inset 0 2px 10px rgba(0, 0, 0, .92);
+}
+
+/* The chase bar. It holds where the health WAS and slides down to where the
+   health IS, so the white sliver on its right is literally the damage you just
+   dealt. This is the whole difference between a bar and a fight. */
+.bossbar__ghost {
+  position: absolute;
+  inset: 0;
+  transform-origin: left;
+  transform: scaleX(var(--ghost));
+  background: linear-gradient(180deg, #fff6e8, #ffbd92);
+  opacity: .92;
+}
+
+.bossbar__fill {
+  position: absolute;
+  inset: 0;
+  transform-origin: left;
+  transform: scaleX(var(--frac));
+  background: linear-gradient(90deg, #4a0b02, var(--boss) 52%, #ff9a3c);
+  box-shadow: 0 0 22px rgba(var(--boss-rgb), .9);
+  transition: transform .1s linear;
+}
+
+/* The leading edge of the drain — the thing the eye actually tracks. */
+.bossbar__edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--frac) * 100%);
+  width: 3px;
+  margin-left: -3px;
+  background: #fff3df;
+  box-shadow: 0 0 16px 3px rgba(var(--boss-rgb), 1);
+  transition: left .1s linear;
+}
+
+/* Cut into segments so a glance reads "two blocks left", not "a red smear", and
+   quartered on top of that so the four phases of the fight are countable. */
+.bossbar__segs {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg,
+    transparent 0 calc(100% / var(--boss-seg) - 2px),
+    rgba(4, 6, 10, .92) calc(100% / var(--boss-seg) - 2px) calc(100% / var(--boss-seg)));
+}
+.bossbar__segs::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg,
+    transparent 0 calc(25% - 3px),
+    rgba(232, 236, 242, .5) calc(25% - 3px) 25%);
+}
+
+.bossbar__flash {
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  opacity: 0;
+}
+.bossbar.hit .bossbar__flash { animation: boss-flash .17s ease-out; }
+@keyframes boss-flash {
+  0% { opacity: .88; }
+  100% { opacity: 0; }
+}
+
+.bossbar__foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  min-height: 28px;
+  margin-top: 6px;
+}
+
+.bossbar__state {
+  padding: 2px 8px 1px;
+  background: rgba(5, 7, 11, .72);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: .3em;
+  margin-right: -.3em;
+  text-transform: uppercase;
+  color: var(--steel);
+  text-shadow: 0 2px 5px #000;
+}
+
+.bossbar__delta {
+  padding: 2px 8px 1px;
+  background: rgba(5, 7, 11, .72);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 18px;
+  color: #fff3df;
+  text-shadow: 0 0 14px rgba(var(--boss-rgb), 1), 0 2px 4px #000;
+  opacity: 0;
+}
+.bossbar__delta.show { animation: boss-delta .9s ease-out; }
+@keyframes boss-delta {
+  0% { opacity: 0; transform: translateY(-8px) scale(1.28); }
+  14% { opacity: 1; transform: none; }
+  68% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(6px); }
+}
+
+/* Below HEALTH.criticalThreshold the whole unit goes hot — the same threshold
+   that turns the player's own portrait frame red, so both readouts speak one
+   language, and the frame that is one shotgun blast from over says so. */
+.bossbar.critical .bossbar__track {
+  border-color: rgba(var(--boss-rgb), .95);
+  animation: boss-critical 1.05s ease-in-out infinite;
+}
+@keyframes boss-critical {
+  0%, 100% { box-shadow: 0 0 26px rgba(var(--boss-rgb), .4), inset 0 2px 10px rgba(0, 0, 0, .92); }
+  50% { box-shadow: 0 0 60px 7px rgba(var(--boss-rgb), .82), inset 0 2px 10px rgba(0, 0, 0, .92); }
+}
+.bossbar.critical .bossbar__name { color: #ffd9ce; }
+.bossbar.critical .bossbar__state {
+  color: var(--boss);
+  text-shadow: 0 0 16px rgba(var(--boss-rgb), .95), 0 2px 5px #000;
+  animation: boss-blink .58s steps(1) infinite;
+}
+@keyframes boss-blink { 50% { opacity: .22; } }
+
+/* The Conductor's bar now owns the top of the frame and names him in 30 px type, so the
+   banner underneath stops competing with it. Shrunk to a hazard card, it reads as the
+   announce it is — and it is the same card BOSS INCOMING arrives on.
+
+   It also holds longer than a wave banner. Measured on the captured frame, the old 2.6 s
+   put the card at rgb(76,42,40) — about a fifth of its own colour — by the time the
+   shutter opened, which looks like a rendering fault rather than a fade. A boss card that
+   outlasts the boss walking in is both better in play and honest in a still. */
+.hud .hud__banner.danger {
+  top: 18%;
+  font-size: clamp(20px, 2.9vw, 40px);
+  line-height: 1;
+  letter-spacing: .3em;
+  color: #ffc4b2;
+  -webkit-text-stroke: 0;
+  text-shadow: 0 0 34px rgba(var(--boss-rgb), .9), 0 2px 5px #000;
+}
+.hud .hud__banner.danger.show { animation: banner 4.2s cubic-bezier(.2, .8, .2, 1); }
+.hud .hud__banner__plate { display: inline-block; }
+.hud .hud__banner.danger .hud__banner__plate {
+  position: relative;
+  padding: .36rem 3.1rem .3rem;
+  background: linear-gradient(180deg, rgba(36, 7, 3, .96), rgba(14, 3, 2, .96));
+  border-top: 2px solid rgba(var(--boss-rgb), .9);
+  border-bottom: 2px solid rgba(var(--boss-rgb), .9);
+  box-shadow: 0 0 64px rgba(var(--boss-rgb), .4), inset 0 0 44px rgba(var(--boss-rgb), .16);
+}
+/* Hazard ends. The station is signed like a station; so is the thing that kills you. */
+.hud .hud__banner.danger .hud__banner__plate::before,
+.hud .hud__banner.danger .hud__banner__plate::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 26px;
+  background: repeating-linear-gradient(-45deg,
+    rgba(var(--boss-rgb), .8) 0 6px, rgba(12, 3, 2, .92) 6px 12px);
+}
+.hud .hud__banner.danger .hud__banner__plate::before { left: 0; }
+.hud .hud__banner.danger .hud__banner__plate::after { right: 0; }
+
+/* ══════════════ KILL FEEDBACK ══════════════ */
+
+.killstack {
+  position: absolute;
+  right: var(--hud-pad);
+  top: 27%;
+  width: min(27vw, 310px);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  text-align: right;
+}
+.killstack::before {
+  content: '';
+  position: absolute;
+  inset: -22px -34px -26px -120%;
+  background: linear-gradient(270deg, rgba(3, 5, 9, .82) 0%, rgba(3, 5, 9, .58) 46%, rgba(3, 5, 9, 0) 100%);
+  opacity: 0;
+  transition: opacity .22s ease-out;
+  pointer-events: none;
+}
+.killstack.live::before { opacity: 1; }
+.killstack > * { position: relative; }
+
+.combo {
+  --combo-color: var(--amber);
+  --wick: 0;
+  opacity: 0;
+  transform: translateX(20px);
+  transition: opacity .16s ease-out, transform .16s ease-out;
+}
+.combo.live { opacity: 1; transform: none; }
+
+.combo__mult {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: clamp(36px, 4.4vw, 62px);
+  line-height: .82;
+  color: var(--combo-color);
+  text-shadow: 0 0 32px currentColor, 0 3px 7px #000;
+}
+.combo.punch .combo__mult { animation: combo-punch .24s cubic-bezier(.2, .9, .2, 1); }
+@keyframes combo-punch {
+  0% { transform: scale(1.34); filter: brightness(1.9); }
+  100% { transform: scale(1); filter: none; }
+}
+
+.combo__meta {
+  margin-top: 5px;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: .28em;
+  margin-right: -.28em;
+  text-transform: uppercase;
+  color: var(--steel);
+  text-shadow: 0 2px 5px #000;
+}
+
+/* The 5x head multiplier is the best mechanic in the game. This is the line
+   that says you are stringing it together. */
+.combo__hs {
+  display: none;
+  margin-top: 4px;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: .2em;
+  margin-right: -.2em;
+  text-transform: uppercase;
+  color: var(--zone-head);
+  text-shadow: 0 0 18px currentColor, 0 2px 5px #000;
+}
+.combo__hs.live { display: block; }
+
+/* The chain's own clock, draining right to left over SCORE.comboWindow. */
+.combo__wick {
+  position: relative;
+  width: 154px;
+  height: 4px;
+  margin: 8px 0 0 auto;
+  background: rgba(8, 11, 17, .8);
+  border: 1px solid rgba(139, 150, 164, .32);
+  overflow: hidden;
+}
+.combo__wick i {
+  position: absolute;
+  inset: 0;
+  color: var(--combo-color);
+  background: currentColor;
+  transform-origin: right;
+  transform: scaleX(var(--wick));
+  box-shadow: 0 0 12px currentColor;
+}
+
+.killfeed {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+.killrow {
+  --row-zone: var(--steel);
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 3px 9px 2px;
+  white-space: nowrap;
+  background: linear-gradient(90deg, rgba(5, 7, 11, 0), rgba(5, 7, 11, .8) 24%);
+  border-right: 3px solid var(--row-zone);
+  animation: killrow var(--row-life) ease-out forwards;
+}
+.killrow b {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: .16em;
+  color: var(--bone);
+  text-shadow: 0 2px 5px #000;
+}
+.killrow i {
+  font-style: normal;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: .22em;
+  color: var(--row-zone);
+  text-shadow: 0 0 12px currentColor;
+}
+.killrow span {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 18px;
+  color: var(--amber);
+  text-shadow: 0 2px 5px #000;
+}
+@keyframes killrow {
+  0% { opacity: 0; transform: translateX(28px); }
+  7% { opacity: 1; transform: none; }
+  72% { opacity: 1; }
+  100% { opacity: 0; transform: translateX(12px); }
+}
+
+/* The zone callout, right where the eye already is. */
+.callout {
+  --callout-color: var(--amber);
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 38%;
+  text-align: center;
+  white-space: nowrap;
+  opacity: 0;
+}
+.callout.show { animation: callout .62s cubic-bezier(.16, .9, .2, 1); }
+.callout__zone {
+  font-size: clamp(20px, 2.3vw, 32px);
+  font-weight: 700;
+  letter-spacing: .34em;
+  margin-right: -.34em;
+  text-transform: uppercase;
+  color: var(--callout-color);
+  -webkit-text-stroke: 1px rgba(0, 0, 0, .8);
+  text-shadow: 0 0 30px currentColor, 0 2px 6px #000;
+}
+.callout__mult {
+  margin-left: 14px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: clamp(20px, 2.3vw, 32px);
+  color: var(--bone);
+  text-shadow: 0 0 22px var(--callout-color), 0 2px 6px #000;
+}
+@keyframes callout {
+  0% { opacity: 0; transform: translateY(14px) scale(.8); }
+  16% { opacity: 1; transform: none; }
+  62% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-16px) scale(1.05); }
+}
+
+/* Combat callouts start on the audio playback event. */
+.streak {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 56%;
+  text-align: center;
+  opacity: 0;
+}
+.streak__plate {
+  display: inline-block;
+  padding: .34rem 1rem .28rem;
+  font-size: clamp(26px, 5vw, 72px);
+  font-weight: 700;
+  letter-spacing: .04em;
+  max-width: calc(100vw - 32px);
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+  text-transform: uppercase;
+  color: #ffdca6;
+  background: linear-gradient(90deg,
+    rgba(40, 10, 4, 0), rgba(40, 10, 4, .93) 14%, rgba(40, 10, 4, .93) 86%, rgba(40, 10, 4, 0));
+  border-top: 1px solid rgba(255, 180, 58, .55);
+  border-bottom: 1px solid rgba(255, 180, 58, .55);
+  -webkit-text-stroke: 1px rgba(0, 0, 0, .8);
+  text-shadow: 0 0 36px rgba(255, 140, 40, .9), 0 2px 6px #000;
+}
+.streak.show { animation: streak var(--callout-seconds, 1s) cubic-bezier(.16, .9, .2, 1) both; }
+@keyframes streak {
+  0% { opacity: 0; transform: scale(.85); }
+  10% { opacity: 1; transform: scale(1.14); }
+  19% { transform: scale(1); }
+  74% { opacity: 1; }
+  100% { opacity: 0; transform: scale(.85) translateY(-12px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bossbar.critical .bossbar__track,
+  .bossbar.critical .bossbar__state,
+  .bossbar.hit .bossbar__rail { animation: none; }
+}
+
+.bossbar__head { flex-wrap: wrap; }
+.bossbar__tag, .bossbar__name, .bossbar__state { letter-spacing: .08em; margin-right: 0; }
+.killrow { gap: 8px; }
+.killrow b, .killrow i, .combo__meta { letter-spacing: .04em; }
+@media (max-width: 700px) {
+  .bossbar { top: 106px; width: calc(100% - 28px); }
+  .bossbar__head { gap: 6px; }
+  .bossbar__name { font-size: 22px; }
+  .killstack { top: 36%; width: min(70vw, 310px); }
+  .killrow { flex-wrap: wrap; justify-content: flex-end; white-space: normal; }
+  .hud .hud__banner.danger { top: 240px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .streak.show { animation-name: streak-fade; }
+}
+@keyframes streak-fade {
+  0%, 100% { opacity: 0; }
+  10%, 78% { opacity: 1; }
+}

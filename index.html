@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ShoeMoney: Last Engineer</title>
+<meta name="description" content="One engineer. An overrun subway. Survive the night in ShoeMoney: Last Engineer.">
+<link rel="canonical" href="https://arcade.shoemoney.com/last-engineer/">
+<meta property="og:url" content="https://arcade.shoemoney.com/last-engineer/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="ShoeMoney: Last Engineer">
+<meta property="og:description" content="One engineer. An overrun subway. Survive the night in ShoeMoney: Last Engineer.">
+<meta property="og:site_name" content="ShoeMoney: Last Engineer">
+<meta property="og:image" content="./brand/last-engineer-og.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:type" content="image/jpeg">
+<meta property="og:image:alt" content="ShoeMoney: Last Engineer — one engineer survives an overrun subway.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="ShoeMoney: Last Engineer">
+<meta name="twitter:description" content="One engineer. An overrun subway. Survive the night in ShoeMoney: Last Engineer.">
+<meta name="twitter:image" content="./brand/last-engineer-og.jpg">
+<meta name="twitter:image:alt" content="ShoeMoney: Last Engineer — one engineer survives an overrun subway.">
+<link rel="icon" type="image/x-icon" href="./favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
+<link rel="stylesheet" href="./src/ui/styles.css">
+</head>
+<body>
+<canvas id="viewport"></canvas>
+
+<!-- ============ HUD ============ -->
+<div id="hud" class="hud" hidden>
+  <div class="hud__vignette" id="vignette"></div>
+  <div class="hud__crosshair" id="crosshair"><i></i><i></i><i></i><i></i><b></b></div>
+  <div class="hud__hitmarker" id="hitmarker"></div>
+
+  <div class="hud__topbar">
+    <div class="wave" id="wave-readout">
+      <span class="wave__label">WAVE</span>
+      <span class="wave__num" id="wave-num">1</span>
+      <span class="wave__left" id="wave-left">0 left</span>
+    </div>
+    <div class="score" id="score-readout">
+      <span class="score__val" id="score-val">0</span>
+      <span class="score__label">SCORE</span>
+    </div>
+  </div>
+
+  <div class="hud__banner" id="banner"></div>
+  <div class="hud__subtitle" id="subtitle"></div>
+
+  <div class="hud__bottomleft">
+    <div class="portrait" id="portrait-wrap">
+      <img id="portrait" src="./game/img/T_Jeremy_Steady.png" alt="">
+      <div class="portrait__frame"></div>
+    </div>
+    <div class="vitals">
+      <div class="bar bar--health"><span class="bar__label">HEALTH</span><div class="bar__fill" id="health-fill"></div><span class="bar__num" id="health-num">100</span></div>
+      <div class="bar bar--armor"><span class="bar__label">ARMOR</span><div class="bar__fill" id="armor-fill"></div><span class="bar__num" id="armor-num">0</span></div>
+    </div>
+  </div>
+
+  <div class="hud__bottomright">
+    <div class="weapon" id="weapon-readout">
+      <span class="weapon__name" id="weapon-name">PISTOL</span>
+      <span class="weapon__ammo"><b id="ammo-mag">12</b><i>/</i><span id="ammo-reserve">48</span></span>
+    </div>
+    <div class="mods" id="mod-strip"></div>
+  </div>
+
+  <div class="hud__damagenumbers" id="damage-numbers"></div>
+</div>
+
+<!-- ============ MENU ============ -->
+<div id="menu" class="screen screen--menu">
+  <div class="screen__inner">
+    <img class="logo" src="./game/img/T_ShoeMoneyLogo.png" alt="ShoeMoney">
+    <h1 class="title title--engineer"><span class="title__brand">SHOEMONEY</span><span class="title__game">LAST ENGINEER</span></h1>
+    <p class="tagline">One engineer. No backup. The last train never stops.</p>
+    <button class="btn btn--primary" id="btn-play">ENTER THE STATION</button>
+    <label class="jeremy-mute" for="mute-jeremy">
+      <input type="checkbox" id="mute-jeremy">
+      <span>Mute Jeremy</span>
+    </label>
+    <div class="stats" id="menu-stats"></div>
+    <div class="controls">
+      <span><kbd>WASD</kbd> move</span><span><kbd>SHIFT</kbd> sprint</span><span><kbd>SPACE</kbd> jump</span>
+      <span><kbd>R</kbd> reload</span><span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> weapons</span>
+      <span><kbd>CLICK</kbd> fire</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============ GAME OVER ============ -->
+<div id="gameover" class="screen screen--over" hidden>
+  <div class="screen__inner">
+    <h1 class="title title--dead">YOU DIED</h1>
+    <div class="runstats" id="run-stats"></div>
+    <form id="arcade-score-form" class="arcade-score" hidden>
+      <label for="arcade-score-name">Leaderboard name <span>(optional)</span></label>
+      <input id="arcade-score-name" name="name" type="text" maxlength="24" autocomplete="nickname" placeholder="Your name" aria-describedby="arcade-score-status">
+      <button class="btn" id="arcade-score-submit" type="submit">SUBMIT SCORE</button>
+      <p id="arcade-score-status" role="status" aria-live="polite"></p>
+    </form>
+    <button class="btn btn--primary" id="btn-retry">BACK ON THE PLATFORM</button>
+    <button class="btn" id="btn-menu">MAIN MENU</button>
+  </div>
+</div>
+
+<div id="loading" class="screen screen--loading">
+  <div class="screen__inner">
+    <div class="loadbar"><div class="loadbar__fill" id="load-fill"></div></div>
+    <p class="loadtext" id="load-text">Booting the 6:15&hellip;</p>
+  </div>
+</div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
