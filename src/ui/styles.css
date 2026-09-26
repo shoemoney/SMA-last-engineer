@@ -208,7 +208,7 @@ html, body {
 
 .hud__subtitle {
   position: absolute;
-  bottom: 17%; left: 50%;
+  bottom: 190px; left: 50%;
   transform: translateX(-50%);
   max-width: min(74ch, 84vw);
   text-align: center;
@@ -763,7 +763,7 @@ kbd {
   .hud__bottomleft { gap: 8px; bottom: 18px; }
   .vitals { width: min(39vw, 180px); }
   .hud__bottomright { bottom: 104px; }
-  .hud__subtitle { bottom: 200px; max-width: calc(100vw - 28px); width: max-content; }
+  .hud__subtitle { bottom: 280px; max-width: calc(100vw - 28px); width: max-content; }
   .runstats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
   .screen--over .screen__inner { width: 100%; padding: 24px 18px; }
   .screen--over .btn { font-size: 20px; width: 100%; padding: 14px 12px; letter-spacing: .06em; }
@@ -922,8 +922,8 @@ kbd {
 .speed-control button:disabled { opacity:.4; cursor:default; }
 .speed-control button:focus-visible { outline:2px solid var(--amber); outline-offset:4px; }
 .speed-controls output { font-size:24px; min-width:58px; font-variant-numeric:tabular-nums; }
-.control-tooltip { display:none; position:absolute; bottom:calc(100% + 10px); left:50%; transform:translateX(-50%); padding:9px 12px; width:190px; max-width:70vw; font-size:18px; line-height:1.5; color:#fff; border:1px solid #698393; background:#03080e; z-index:2; }
-.speed-control:hover .control-tooltip,.speed-control:focus-within .control-tooltip { display:block; }
+.control-tooltip { pointer-events:none; display:none; position:absolute; bottom:calc(100% + 10px); left:50%; transform:translateX(-50%); padding:9px 12px; width:190px; max-width:70vw; font-size:18px; line-height:1.5; color:#fff; border:1px solid #698393; background:#03080e; z-index:2; }
+.speed-control:hover .control-tooltip,.speed-control button:focus-visible + .control-tooltip { display:block; }
 #run-controls-status { color:#b4cbd7; }
 .arcade-score input { font-family:inherit; }
 .screen--over .screen__inner { grid-template-areas:"title title" "epitaph epitaph" "stats score" "record score" "retry menu" "leaderboard leaderboard"; }
@@ -936,7 +936,7 @@ kbd {
 .arcade-leaderboard .btn { font-size:20px; margin:16px 0 0; }
 .arcade-leaderboard .btn[hidden] { display:none; }
 @media(max-width:700px) {
-  .run-controls-hint { max-width:calc(100% - 28px); bottom:150px; }
+  .run-controls-hint { max-width:calc(100% - 28px); bottom:190px; }
   .run-controls { padding:18px; }
   .run-controls__card { padding:22px 18px; }
   .run-controls__card h2 { font-size:34px; }

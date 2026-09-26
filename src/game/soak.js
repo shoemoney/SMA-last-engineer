@@ -1,60 +1,15 @@
 /**
- * soak.js — drive the real wave director through N waves with no renderer, no browser and
- * no player, and report what came out. verify/soak.mjs is the CLI in front of it.
- *
- * What this proves: the composition formula, the spawn queue, the live cap, the batch
- * top-up rule and the intermission timers all hold for waves no human will ever play to,
- * they hold identically every run for a given seed, and the real damage and health modules
- * can chew through a wave-25 boss without producing a NaN or an immortal.
- *
- * What it deliberately does NOT model: movement, line of sight, zombie attacks, and every
- * pickup except dual wield and ammunition (below). A soak that needed all of that would be
- * the game, and would stop being a cheap gate. DEFAULT BEHAVIOUR IS UNCHANGED: both
- * `dualWield` and `ammo` are opt-in, `false` by default, so `runSoak({ waves, seed })` — the
- * only call verify/soak.mjs makes — still fires an unlimited rifle, exactly as before.
- *
- * DUAL WIELD IS THE ONE PICKUP MODELED, because it is the one pickup with a measured,
- * reproducible effect on DPS (see WeaponSystem.startFire, src/weapons/weapon.js:489-501)
- * and because its timing needs no invention: weapons never respawn (rules.js PICKUPS.
- * weaponsRespawn: false) and the loose pistol that grants it is item 12 of the 14-item
- * opening loadout dealt onto the station platform before wave 1 even starts — on the floor
- * from t=0, same as the rifle this soak already assumes was collected immediately. See
- * `runSoak({ dualWield: true })` below for the mechanic it mirrors.
- *
- * AMMUNITION — `runSoak({ ammo: true, climb: 'grounded' | 'climbing' })` — turns the
- * infinite-bullets assumption above off and tracks the primary rifle's magazine and
- * reserve exactly the way Weapon (src/weapons/weapon.js) does: every shot, hit or miss,
- * spends one round (fireShot() decrements ammoInMag unconditionally); a magazine that hits
- * zero starts a reload that occupies WEAPONS.RIFLE.reloadTime seconds and no shots land
- * during it (Weapon.reload() clears fireCooldownActive); and a reload is refused outright
- * when reserve is already zero (reload()'s `this.reserve <= 0` guard), so a fully dry gun
- * stays dry forever. The one competent-player liberty taken, on the same footing as
- * missRate/headshotRate above: a reload starts the instant the magazine empties, standing
- * in for a player who presses R on the frame they go dry rather than some frames later.
- *
- * The only resupply the game has is grant() — WeaponSystem.grant(id) rebuilds the weapon
- * with a full magazine AND a full reserve (weapon.js:539) — and the only place to grant a
- * weapon after wave 1 is the summit cache restock, `#restockSummit` in src/game/game.js,
- * which reseats `SUMMIT.RESTOCK` (['rifle', 'armor', 'shotgun', 'health'], cycled by
- * `wave % 4`) onto a pedestal at every WAVE_CLEAR. `climb: 'grounded'` never visits it — the
- * correct model for a player who never leaves the platform, per the summit's own comment in
- * game.js ("It only arms once the player has left the platform"). `climb: 'climbing'`
- * models a player who climbs and loots every restock the instant it lands: whenever
- * SUMMIT.RESTOCK's slot for that wave is 'rifle' (waves 4, 8, 12, 16, 20, 24 — 6 of 25
- * clears), the primary refills to full. Chosen as the UPPER bound the mechanic allows,
- * because #restockSummit reseats every wave clear whether or not the player visited, so
- * "always collects" is the best a real player can do, not an invented rate. SUMMIT lives in
- * game.js, which src/game/** may not import (see game.js's own purity-rule comment), so its
- * RESTOCK cycle is copied here as a literal and has to be kept in sync by hand if it changes.
- * SUMMIT.RESTOCK never contains 'pistol', so the dual-wield off-hand pistol (150 reserve +
- * 15 mag, tracked the same way when `ammo` and `dualWield` are both true) never resupplies
- * either way — it runs on the one pistol from the opening loadout for the whole run.
+ * Deterministic wave bookkeeping and damage smoke test, not a playability test.
+ * The default rifle has unlimited ammunition. Optional finite ammunition models
+ * magazine/reload timing and immediate collection of matching summit restocks.
+ * Movement, line of sight, incoming attacks, other inventory guns and pickup travel
+ * are not simulated. Dual wield fires only on modeled trigger-engagement edges.
  */
 
 import { EventBus, EV } from '../core/events.js'
 import { Rng } from '../core/rng.js'
 import { STEP } from '../core/loop.js'
-import { WAVES, WEAPONS } from './rules.js'
+import { WAVES, WEAPONS, PICKUPS } from './rules.js'
 import { resolveShot, MOD, ZONE } from './damage.js'
 import { HealthPool } from './health.js'
 import { WaveDirector } from './waveDirector.js'
@@ -100,13 +55,6 @@ function pickZone(rng) {
   if (roll < SOAK.missRate + SOAK.headshotRate + SOAK.chestRate) return ZONE.chest
   return ZONE.body
 }
-
-/**
- * Mirrors src/game/game.js's private `SUMMIT.RESTOCK` — that file cannot be imported here
- * (see the AMMUNITION note at the top of this file), so the cycle is a literal copy. Indexed
- * by `wave % SUMMIT_RESTOCK.length`, exactly as `#restockSummit(wave)` does.
- */
-const SUMMIT_RESTOCK = Object.freeze(['rifle', 'armor', 'shotgun', 'health'])
 
 /** A fresh magazine-and-reserve tracker for one gun, mirroring Weapon's constructor fields. */
 function makeAmmoState(weaponConfig) {
@@ -175,6 +123,7 @@ export function runSoak({ waves = 25, seed = 1337, dualWield = false, ammo = fal
   const live = []
   const report = []
   let current = null
+  let termination = null
   let simSeconds = 0
   let totalSpawned = 0
   let totalKilled = 0
@@ -238,15 +187,17 @@ export function runSoak({ waves = 25, seed = 1337, dualWield = false, ammo = fal
     }
 
     if (ammo) {
-      // #restockSummit(wave) — a climbing player takes whatever lands the instant it lands.
-      if (climb === 'climbing' && SUMMIT_RESTOCK[wave % SUMMIT_RESTOCK.length] === 'rifle') {
-        refillAmmo(primaryAmmo)
+      if (climb === 'climbing') {
+        const restock = PICKUPS.summitRestock[wave % PICKUPS.summitRestock.length]
+        if (restock === SOAK.weapon.id) refillAmmo(primaryAmmo)
+        if (restock === WEAPONS.PISTOL.id && offHandAmmo) refillAmmo(offHandAmmo)
       }
       ammoCurve.push({
         wave,
         mag: primaryAmmo.mag,
         reserve: primaryAmmo.reserve,
         total: primaryAmmo.mag + primaryAmmo.reserve,
+        offHandTotal: offHandAmmo ? offHandAmmo.mag + offHandAmmo.reserve : null,
       })
     }
 
@@ -374,9 +325,18 @@ export function runSoak({ waves = 25, seed = 1337, dualWield = false, ammo = fal
     }
 
     if (current && simSeconds - current.startedAt > SOAK.maxWaveSeconds) {
+      const primaryDry = ammo && primaryAmmo.mag + primaryAmmo.reserve === 0
+      termination = {
+        reason: primaryDry ? 'ammo_exhausted' : 'time_budget',
+        wave: current.wave,
+        killed: current.killed,
+        expected: current.expected,
+        primaryAmmo: ammo ? primaryAmmo.mag + primaryAmmo.reserve : null,
+        offHandAmmo: offHandAmmo ? offHandAmmo.mag + offHandAmmo.reserve : null,
+      }
       errors.push(
         `wave ${current.wave} stalled: ${SOAK.maxWaveSeconds}s of sim with ${current.killed}/${current.expected} killed ` +
-        `and ${live.length} alive — the queue or the remaining-count bookkeeping is stuck`
+        `and ${live.length} alive — ${primaryDry ? 'primary ammunition exhausted in this resource model' : 'simulation time budget exceeded'}`
       )
       break
     }
@@ -387,6 +347,15 @@ export function runSoak({ waves = 25, seed = 1337, dualWield = false, ammo = fal
   }
 
   return {
+    assumptions: {
+      ammunition: ammo ? 'finite' : 'unlimited',
+      incomingDamage: false,
+      movement: false,
+      lineOfSight: false,
+      restockCollection: climb === 'climbing' ? 'immediate' : 'none',
+      primaryWeapon: SOAK.weapon.id,
+    },
+    termination,
     waves: report,
     totalSpawned,
     totalKilled,

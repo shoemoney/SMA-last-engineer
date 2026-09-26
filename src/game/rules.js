@@ -1196,6 +1196,7 @@ export const PICKUPS = Object.freeze({
   /** Equipment does not respawn; health and armor are replaced only at wave start. */
   modsRespawn: false, // ShoePickupPlacer.cpp
   weaponsRespawn: false, // ShoePickupPlacer.cpp
+  summitRestock: Object.freeze(['rifle', 'shotgun', 'pistol']),
 
   respawnFlashSeconds: 0.4, // CHOSEN: not in original spec — a pickup simply blinked back into existence
   pulsePeriod: 1.6, // CHOSEN: not in original spec — seconds; the theme light breathes so it reads across the platform
@@ -1657,7 +1658,7 @@ export const AUDIO = Object.freeze({
 
   /** The only balance that existed was the per-call gains; these buses are new. */
   MIX: Object.freeze({
-    master: 0.4, // Headroom for overlapping rifle tails and announcer playback.
+    master: 0.34, // Headroom for overlapping rifle tails and announcer playback.
     sfx: 1.0, // CHOSEN: not in original spec
     voice: 1.0, // CHOSEN: not in original spec
     ambience: 1.0, // CHOSEN: not in original spec — the 0.35 per-call gain already sets its level

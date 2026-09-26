@@ -82,15 +82,15 @@ export function createVoiceDirector({ play2D, bus = null, canSpeak = () => true 
       // A higher-priority line has taken the mouth. Cut the current one rather than layering,
       // which is the entire point of the single slot.
       slot.handle?.stop?.()
-      slot = null
+      endSlot()
     }
-
-    if (VO_ONCE_PER_RUN.has(line)) spoken.add(line)
-    const cooldown = VO_COOLDOWNS[line]
-    if (cooldown != null) cooldowns.set(line, cooldown)
 
     const seconds = AUDIO.VO_CLIPS[line]?.seconds ?? 0
     const handle = play2D(line, { volume: AUDIO.VOICE.volume, pitch: AUDIO.DEFAULTS.uiPitch })
+    if (handle === null) return false
+    if (VO_ONCE_PER_RUN.has(line)) spoken.add(line)
+    const cooldown = VO_COOLDOWNS[line]
+    if (cooldown != null) cooldowns.set(line, cooldown)
 
     // The clip length from rules.js is the source of truth for when the slot frees, so the queue
     // drains identically in node where there is no audio at all. A real handle finishing early
@@ -133,8 +133,12 @@ export function createVoiceDirector({ play2D, bus = null, canSpeak = () => true 
       if (VO_ONCE_PER_RUN.has(line) && spoken.has(line)) return false
       if ((cooldowns.get(line) ?? 0) > 0) return false
 
-      if (!slot) return start(line)
-      if (voPriority(line) < voPriority(slot.line)) return start(line)
+      if (!slot || voPriority(line) < voPriority(slot.line)) {
+        if (!start(line)) return enqueue(line)
+        const pending = queue.findIndex(entry => entry.line === line)
+        if (pending >= 0) queue.splice(pending, 1)
+        return true
+      }
       return enqueue(line)
     },
 
@@ -178,12 +182,22 @@ export function createVoiceDirector({ play2D, bus = null, canSpeak = () => true 
       if (!slot && queue.length > 0) {
         let best = 0
         for (let i = 1; i < queue.length; i++) if (queue[i].priority < queue[best].priority) best = i
-        start(queue.splice(best, 1)[0].line)
+        if (start(queue[best].line)) queue.splice(best, 1)
       }
 
       for (let i = queue.length - 1; i >= 0; i--) {
         if (queue[i].deadline <= 0) queue.splice(i, 1)
       }
+    },
+
+    /** Decode completion may arrive while gameplay is paused. Do not age pending lines. */
+    retryPending() {
+      if (slot || !canSpeak() || queue.length === 0) return false
+      let best = 0
+      for (let i = 1; i < queue.length; i++) if (queue[i].priority < queue[best].priority) best = i
+      if (!start(queue[best].line)) return false
+      queue.splice(best, 1)
+      return true
     },
 
     /** Subscribe to subtitle changes without going through the bus (the HUD may prefer either). */

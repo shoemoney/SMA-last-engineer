@@ -232,7 +232,7 @@ const SUMMIT = Object.freeze({
    */
   CACHE: Object.freeze(['pistol', 'shotgun', 'rifle']),
   /** Restocked at every wave clear onto whichever pedestal is standing empty. */
-  RESTOCK: Object.freeze(['rifle', 'shotgun', 'pistol']),
+  RESTOCK: PICKUPS.summitRestock,
 
   /**
    * And the reason to come back down.
@@ -1685,6 +1685,7 @@ export class Game {
   #grantPickup(def) {
     const player = this.player
     let granted = false
+    let gainedDualWield = false
 
     switch (def.kind) {
       case 'health':
@@ -1704,8 +1705,20 @@ export class Game {
       case 'weapon':
         // The loose pistol IS the dual-wield pickup — PICKUPS labels it "DUAL WIELD".
         if (def.weapon === PLAYER.START.weapon) {
-          granted = this.weapons.grantDualWield()
-          if (granted) player.grantDualWield()
+          if (!this.weapons.dualWield) {
+            granted = this.weapons.grantDualWield()
+            gainedDualWield = granted
+            if (granted) player.grantDualWield()
+          } else {
+            for (const gun of [this.weapons.weapons.get(PLAYER.START.weapon), this.weapons.left]) {
+              if (gun.ammoInMag >= gun.config.magazineSize && gun.reserve >= gun.config.reserveAmmo) continue
+              gun.ammoInMag = gun.config.magazineSize
+              gun.reserve = gun.config.reserveAmmo
+              gun.isReloading = false
+              gun.reloadTimer = 0
+              granted = true
+            }
+          }
         } else {
           // A re-grant rebuilds the gun with a full magazine and a full reserve, which is the
           // only ammo resupply in the game, so it always does something.
@@ -1730,7 +1743,7 @@ export class Game {
     })
     if (def.kind === 'mod') {
       this.bus.emit(EV.MOD_GAINED, { mod: def.mod, bit: def.bit, mods: this.weapons.mods })
-    } else if (def.kind === 'weapon' && def.weapon === PLAYER.START.weapon) {
+    } else if (gainedDualWield) {
       this.bus.emit(EV.MOD_GAINED, { mod: 'dualWield', mods: this.weapons.mods, dualWield: true })
     }
     return true

@@ -1,16 +1,8 @@
 /**
- * End to end: boot the built game in a real browser and PLAY it.
- *
- * Every other gate in this repo checks a slice — the damage maths in node, a staged frame's
- * pixels, a frame-time distribution. None of them presses a button. This one starts at the
- * title screen and does not stop until it has killed something, taken damage, climbed nine
- * metres, died, and started again.
- *
- * Each step asserts on state the GAME reports, not on what the script just asked for. A test
- * that checks its own input proves nothing.
- *
- *   node verify/e2e.mjs            # headed, the honest default
- *   node verify/e2e.mjs --q=low
+ * Browser integration gate for controls, combat, lifecycle, and staged graphics.
+ * Uses scripted input and silent audio. Enemy aiming and summit/death frames are staged;
+ * native pointer-lock, audible sound, earned traversal, and SQLite ranking need their own gates.
+ * The local server supplies an explicit empty leaderboard fixture, never production scores.
  */
 import { chromium } from 'playwright'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -42,6 +34,11 @@ async function step(name, fn) {
   const t0 = Date.now()
   try {
     const detail = await fn()
+    if (detail?.skipped) {
+      results.push({ name, ok:null, skipped:true, detail:detail.reason })
+      console.log(`SKIPPED ${stepNo}. ${name}: ${detail.reason}`)
+      return
+    }
     results.push({ name, ok: true, detail })
     console.log(`✓ ${String(stepNo).padStart(2)}. ${name.padEnd(42)} ${detail ?? ''}  (${Date.now() - t0}ms)`)
   } catch (err) {
@@ -94,16 +91,30 @@ await step('pressing play starts a run', async () => {
   return `wave ${s.wave}, ${s.health}hp, weapon ${s.weapon}`
 })
 
-await step('zombies spawn and close the distance', async () => {
+await step('preparation waits, then skipping starts one wave', async () => {
+  const initial = await state()
+  assert(initial.phase === 'preparation', `expected preparation, got ${initial.phase}`)
+  assert(initial.zombies === 0, 'enemies spawned during preparation')
+  await sim(5)
+  const waiting = await state()
+  assert(waiting.phase === 'preparation' && waiting.zombies === 0, 'preparation ended early')
+  const skipped = await page.evaluate(() => {
+    const game = globalThis.__SHOE__.game
+    return [game.startNextWave(),game.startNextWave()]
+  })
+  assert(skipped[0] === true && skipped[1] === false, 'wave skip is not idempotent')
+  return 'five seconds safe; one wave started'
+})
+
+await step('train arrives and releases zombies', async () => {
   const before = (await state()).bodies
-  await sim(25)
+  await sim(6)
   const after = await state()
-  assert(after.bodies > 0, `no zombies alive after 25s (spawned from ${before})`)
+  assert(after.bodies > 0, `no zombies alive after train arrival (spawned from ${before})`)
   return `${after.bodies} on the platform, ${after.remaining} left in the wave`
 })
 
-await step('firing kills and scores', async () => {
-  const before = await state()
+await step('pistol firing resolves damage and a kill', async () => {
   const detail = await page.evaluate(() => {
     const S = globalThis.__SHOE__, g = S.game
     /**
@@ -119,10 +130,9 @@ await step('firing kills and scores', async () => {
      *
      * Automated aim proves nothing about a game anyway. What is worth asserting is the
      * chain: trace finds flesh, the hit resolves a zone, damage lands, the body dies, the
-     * score moves. Place the target where the shooter is already looking and test that.
+     * kill count moves. Place the target where the shooter is already looking and test that.
      */
-    if (!S.state().alive) g.startRun()
-    for (let i = 0; i < 300; i++) g.tick(0.05)
+    if (!S.state().alive) { g.startRun(); g.startNextWave(); g.tick(6) }
 
     const live = () => g.zombies.bodies.filter(z => z && z.alive !== false && (z.health?.alive ?? true))
     if (!live().length) return { note: 'no bodies spawned' }
@@ -142,6 +152,7 @@ await step('firing kills and scores', async () => {
     const sighted = g.zombies.raycast(so, sd, 10000)
     if (!sighted) return { note: 'target placed but the trace does not see it' }
 
+    const killsBefore = S.state().kills
     let rounds = 0
     for (let i = 0; i < 240; i++) {
       target.position.set(...toSpec(ahead))   // hold it there; it is trying to walk at us
@@ -151,13 +162,12 @@ await step('firing kills and scores', async () => {
       if (!target.health?.alive) break
     }
     g.weapons.setTrigger(false)
-    return { zone: sighted.zone, distance: Math.round(sighted.distance), rounds }
+    return { zone: sighted.zone, distance: Math.round(sighted.distance), rounds, killsBefore }
   })
   const after = await state()
   assert(!detail.note, detail.note ?? '')
-  assert(after.kills > before.kills, `kills did not rise (${before.kills} -> ${after.kills})`)
-  assert(after.score > before.score, `score did not rise (${before.score} -> ${after.score})`)
-  return `${after.kills - before.kills} kill, +${after.score - before.score} score, ${detail.zone} hit at ${detail.distance}cm`
+  assert(after.kills > detail.killsBefore, `kills did not rise (${detail.killsBefore} -> ${after.kills})`)
+  return `${after.kills - detail.killsBefore} kill, ${detail.zone} hit at ${detail.distance}cm; ranking waits for wave completion`
 })
 
 await step('combat frame is readable', async () => {
@@ -165,6 +175,32 @@ await step('combat frame is readable', async () => {
   const fails = judge(m)
   assert(!fails.length, `firefight frame failed: ${fails.join('; ')}`)
   return `lum ${m.meanLuminance}, ${m.distinctHues} hues`
+})
+
+await step('wave completion ranks and advances into the next wave', async () => {
+  const detail = await page.evaluate(() => {
+    const game = globalThis.__SHOE__.game
+    if (!game.playing) { game.startRun(); game.startNextWave() }
+    const before = game.snapshot().completedWaves
+    let steps = 0
+    while (game.snapshot().completedWaves === before && steps++ < 1200) {
+      game.tick(1 / 60)
+      for (const zombie of game.zombies.bodies) {
+        if (zombie.health?.alive) zombie.hit(100000,{ignoresArmor:true,instigator:game.player})
+      }
+    }
+    const clear = game.snapshot()
+    game.tick(9)
+    const waiting = game.snapshot()
+    game.tick(1.1)
+    const next = game.snapshot()
+    return {before,clear,waiting,next}
+  })
+  assert(detail.clear.completedWaves === detail.before + 1, 'spawn/death sequence did not clear one wave')
+  assert(detail.clear.score >= detail.clear.completedWaves * 10000, 'completed-wave score was not applied')
+  assert(detail.waiting.phase === 'intermission', 'ten-second break ended before nine seconds')
+  assert(detail.next.wave === detail.clear.wave + 1 && detail.next.phase === 'trainArriving', 'next wave did not arrive after break')
+  return `wave ${detail.clear.wave} cleared via deterministic damage; next wave ${detail.next.wave}`
 })
 
 await step('the player can take damage', async () => {
@@ -192,7 +228,7 @@ await step('the trackway does not trap the player', async () => {
   return `lifted back to y=${y.toFixed(0)}`
 })
 
-await step('the summit is reachable', async () => {
+await step('staged summit frame renders at street altitude', async () => {
   await page.evaluate(() => globalThis.__SHOE__.scenario('summit'))
   await page.waitForTimeout(1500)
   const s = await state()
@@ -203,29 +239,26 @@ await step('the summit is reachable', async () => {
   return `altitude ${s.altitude}, lum ${m.meanLuminance}`
 })
 
-await step('idle crowd keeps moving, never freezes', async () => {
-  // The bug this guards is a CROWD freezing solid after the player dies (post-death
-  // condition below). Proof requires several bodies actually moving — one twitching
-  // zombie is not a crowd, it is a coincidence. `n < 3` means the platform cannot even
-  // in principle supply that proof right now, so it is reported as a loud skip rather
-  // than a silent pass: a green check here must mean the crowd was actually exercised.
-  const { n, moved } = await page.evaluate(() => {
-    const g = globalThis.__SHOE__.game
-    g.zombieWorld.player = null                 // the post-death condition
-    const live = g.zombies.bodies.filter(z => z && z.alive !== false && (z.health?.alive ?? true))
-    if (!live.length) return { n: 0, moved: 0 }
+await step('staged crowd keeps milling without a player target', async () => {
+  const { n, moved, survivors } = await page.evaluate(() => {
+    const S = globalThis.__SHOE__
+    S.scenario('firefight')
+    const g = S.game
+    g.stage = null
+    g.weapons.setTrigger(false)
+    g.zombieWorld.player = null
+    const live = g.zombies.bodies.filter(z => z && z.health?.alive)
     const before = live.map(z => ({ x: z.position.x, y: z.position.y }))
     for (let i = 0; i < 60; i++) g.tick(0.05)
-    const moved = live.filter((z, i) => Math.hypot(z.position.x - before[i].x, z.position.y - before[i].y) > 3).length
-    return { n: live.length, moved }
+    const survivors = live.filter(z => z.health?.alive).length
+    const moved = live.filter((z, i) => z.health?.alive
+      && Math.hypot(z.position.x - before[i].x, z.position.y - before[i].y) > 3).length
+    return { n: live.length, moved, survivors }
   })
-  if (n === 0) return 'no bodies to check'          // a genuinely empty platform is not a failure
-  if (n < 3) {
-    console.log(`  ⚠ SKIPPED — only ${n} live bod${n === 1 ? 'y' : 'ies'} on the platform, need >=3 to prove a CROWD keeps moving, not one twitching body`)
-    return `SKIPPED: only ${n} live bodies (need >=3)`
-  }
+  assert(n >= 3, `staged firefight supplied only ${n} live bodies; need at least three`)
+  assert(survivors === n, `only ${survivors} of ${n} tracked bodies survived the noncombat milling probe`)
   assert(moved >= 3, `only ${moved} of ${n} bodies moved — the crowd is freezing, not milling`)
-  return `${moved} of ${n} bodies still milling`
+  return `${moved} of ${n} staged bodies still milling through actual updates`
 })
 
 await step('death ends the run and shows the card', async () => {
@@ -241,8 +274,7 @@ await step('death ends the run and shows the card', async () => {
 })
 
 await step('retry starts a clean run', async () => {
-  await page.evaluate(() => document.getElementById('btn-retry')?.click()
-    ?? globalThis.__SHOE__.game.startRun())
+  await page.locator('#btn-retry').click()
   await page.waitForTimeout(1000)
   const s = await state()
   assert(s.alive, 'not alive after retry')
@@ -261,11 +293,14 @@ await step('no console errors during the whole run', async () => {
 await browser.close()
 server.close()
 
-const failed = results.filter(r => !r.ok)
+const failed = results.filter(r => r.ok === false)
+const skipped = results.filter(r => r.skipped)
+const passed = results.filter(r => r.ok === true)
+await writeFile(`${OUT}results.json`,JSON.stringify({passed:passed.length,failed:failed.length,skipped:skipped.length,results},null,2))
 console.log(`\nframes: ${OUT}`)
 if (failed.length) {
   console.error(`\nE2E FAILED — ${failed.length}/${results.length} steps`)
   failed.forEach(f => console.error(`  ✗ ${f.name}: ${f.detail}`))
   process.exit(1)
 }
-console.log(`\nE2E PASSED — ${results.length}/${results.length} steps on q=${QUALITY}`)
+console.log(`\nE2E PASSED — ${passed.length} passed, ${skipped.length} skipped, ${results.length} total steps on q=${QUALITY}`)

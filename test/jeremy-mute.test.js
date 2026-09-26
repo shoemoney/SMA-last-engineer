@@ -154,3 +154,24 @@ it.each(['health', 'armor'])('plays new %s pickup audio until Jeremy is muted', 
   expect(sources).toHaveLength(before)
   disposeAudio()
 })
+
+
+it.each(['none', 'mute', 'menu', 'death', 'retry'])('handles startup decode race with %s before readiness while gameplay updates are paused', async action => {
+  const audio = await import('../src/audio/audio.js')
+  const { EventBus, EV } = await import('../src/core/events.js')
+  const bus = new EventBus()
+  audio.initAudio({ bus, autoUnlock: false })
+  const unlocking = audio.sound.unlock()
+  bus.emit(EV.STATE_CHANGE, { state: 'intermission', previous: 'menu' })
+  expect(sourceFor('vo_intro')).toBeUndefined()
+  expect(audio.sound.state().voice.latched).not.toContain('vo_intro')
+  if (action === 'mute') audio.sound.setJeremyMuted(true)
+  if (action === 'menu') bus.emit(EV.STATE_CHANGE, { state: 'menu' })
+  if (action === 'death') bus.emit(EV.PLAYER_DEATH)
+  if (action === 'retry') bus.emit(EV.STATE_CHANGE, { state: 'intermission', previous: 'gameOver' })
+  await unlocking
+  const intros = sources.filter(s => s.buffer?.name === 'vo_intro')
+  expect(intros).toHaveLength(['none', 'retry'].includes(action) ? 1 : 0)
+  if (action === 'death') expect(sourceFor('vo_game_over').start).toHaveBeenCalled()
+  audio.disposeAudio()
+})

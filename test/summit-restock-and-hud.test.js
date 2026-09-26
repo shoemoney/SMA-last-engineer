@@ -31,6 +31,7 @@
 import './support/game-dom-shim.js'
 import { describe, it, expect, afterEach } from 'vitest'
 import * as THREE from 'three/webgpu'
+import { EV } from '../src/core/events.js'
 import { Game } from '../src/game/game.js'
 import { buildWave } from '../src/game/waveDirector.js'
 import { WAVES, TRAIN } from '../src/game/rules.js'
@@ -173,4 +174,45 @@ describe('#restockSummit — finding #2', () => {
     const anyPedestalRestocked = laterOccupants.some((pickup, i) => pickup !== initialOccupants[i])
     expect(anyPedestalRestocked).toBe(true)
   }, 30000)
+})
+
+
+describe('recurring pistol resupply', () => {
+  it('preserves the initial dual grant, then refills both hands and refuses a full pair', () => {
+    const game = makeGame()
+    const def = game.summitPickups.pickups.find(p => p.def.id === 'pistol').def
+    const primary = game.weapons.weapons.get('pistol')
+    let dualEvents = 0
+    let pickupEvents = 0
+    const offPickup = game.bus.on(EV.PICKUP, e => { if (e.type === 'pistol') pickupEvents++ })
+    const offMod = game.bus.on(EV.MOD_GAINED, e => { if (e.mod === 'dualWield') dualEvents++ })
+    primary.ammoInMag = 4
+    expect(game.summitPickups.grant(game.player, def)).toBe(true)
+    expect(game.weapons.dualWield).toBe(true)
+    expect(primary.ammoInMag).toBe(4)
+    expect(dualEvents).toBe(1)
+    const left = game.weapons.left
+    for (const gun of [primary, left]) {
+      gun.ammoInMag = 0
+      gun.reserve = 0
+      gun.isReloading = true
+      gun.reloadTimer = 1
+    }
+    expect(game.summitPickups.grant(game.player, def)).toBe(true)
+    for (const gun of [primary, left]) {
+      expect(gun.ammoInMag).toBe(gun.config.magazineSize)
+      expect(gun.reserve).toBe(gun.config.reserveAmmo)
+      expect(gun.isReloading).toBe(false)
+      expect(gun.reloadTimer).toBe(0)
+    }
+    expect(game.weapons.left).toBe(left)
+    expect(game.summitPickups.grant(game.player, def)).toBe(false)
+    left.reserve -= 1
+    expect(game.summitPickups.grant(game.player, def)).toBe(true)
+    expect(left.reserve).toBe(left.config.reserveAmmo)
+    offMod()
+    offPickup()
+    expect(dualEvents).toBe(1)
+    expect(pickupEvents).toBe(3)
+  })
 })

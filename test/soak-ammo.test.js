@@ -96,3 +96,19 @@ describe('runSoak({ ammo }) wiring', () => {
     expect(climbing.ammo.primaryShotsFired).toBeGreaterThanOrEqual(grounded.ammo.primaryShotsFired)
   })
 })
+
+
+describe('resource termination evidence', () => {
+  it('reports ammunition exhaustion without accusing the queue of being stuck', () => {
+    const report = runSoak({ waves: 25, seed: 1337, ammo: true })
+    expect(report.termination?.reason).toBe('ammo_exhausted')
+    expect(report.termination?.wave).toBe(5)
+    expect(report.errors.join(' ')).not.toContain('bookkeeping is stuck')
+  })
+  it('uses the current rifle restock after wave 3 and reports the modeled scope', () => {
+    const report = runSoak({ waves: 4, seed: 1337, ammo: true, climb: 'climbing' })
+    expect(report.ammo.curve.find(row => row.wave === 3)?.total).toBe(270)
+    expect(report.assumptions.incomingDamage).toBe(false)
+    expect(report.assumptions.ammunition).toBe('finite')
+  })
+})

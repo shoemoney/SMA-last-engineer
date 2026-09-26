@@ -557,7 +557,13 @@ function createEngine() {
 const engine = createEngine()
 const voice = createVoiceDirector({
   canSpeak: () => !jeremyMuted && !combat.speaking,
-  play2D: (line, { volume, pitch }) => jeremyMuted || combat.speaking ? null : engine.play(line, { position: null, volume, pitch }),
+  play2D: (line, { volume, pitch }) => {
+    if (jeremyMuted || combat.speaking) return null
+    const handle = engine.play(line, { position: null, volume, pitch })
+    // Permanent silence (no Web Audio, mute, or failed asset) retains subtitle-only
+    // narration. A transient null may still be awaiting the gesture or decode.
+    return engine.isSilent(line) ? undefined : handle
+  },
 })
 
 let unbind = []
@@ -583,7 +589,11 @@ export const sound = {
     }
     try { globalThis.localStorage?.setItem(JEREMY_MUTE_STORAGE_KEY, String(jeremyMuted)) } catch {}
   },
-  unlock: () => engine.unlock(),
+  async unlock() {
+    const unlocked = await engine.unlock()
+    if (unlocked) voice.retryPending()
+    return unlocked
+  },
   preload: () => engine.prefetch(),
   update: (dt) => { combat.update(dt); voice.update(dt) },
   setListener: (position, forward, up) => engine.setListener(position, forward, up),

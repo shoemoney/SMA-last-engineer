@@ -31,7 +31,7 @@
  *
  * ## Why nothing here is per-drop
  *
- * Two rain fields and two splash pools: four instanced draws for the whole weather system.
+ * Two rain regions in four batches, plus two splash pools: six instanced weather draws.
  * Each drop's slant is baked into the GEOMETRY rather than into its matrix, so a frame's
  * work per drop is three float writes into the instance matrix buffer — no Matrix4, no
  * quaternion, no allocation.
@@ -1445,16 +1445,21 @@ export function initSky(scene, renderer = null) {
   try {
     // Kept a little inside the ceiling hole (X 80..780, |Y| <= 260) so every drop in this
     // field is a drop that can actually reach the building instead of one landing on a slab.
-    const shaft = buildRainField(
-      NIGHT.rain.shaft,
-      { minX: EXIT.shaftMinX + 15, maxX: VOID_MAX_X - 10, halfY: EXIT.shaftHalfY - 12, minZ: LEVELS.platformTopZ, maxZ: EXIT.wellTopZ - 8 },
-      wellCatchZ,
-      (x, y, z) => shaftSplashes?.spawn(x, y, z, splashShaft, NIGHT.splash.maxRadius.shaft, NIGHT.splash.life.shaft),
-    )
-    shaft.mesh.name = 'rain-stairwell'
-    group.add(shaft.mesh)
-    fields.push(shaft)
-    disposers.push(() => shaft.dispose())
+    // Three stores <=1000 instance matrices in a UBO. Keep each shaft batch below
+    // the 16 KiB WebGL minimum without reducing rain density or patching the renderer.
+    const batchSize = 200
+    for (let offset = 0; offset < NIGHT.rain.shaft.count; offset += batchSize) {
+      const shaft = buildRainField(
+        { ...NIGHT.rain.shaft, count: Math.min(batchSize, NIGHT.rain.shaft.count - offset), seed: NIGHT.rain.shaft.seed + offset },
+        { minX: EXIT.shaftMinX + 15, maxX: VOID_MAX_X - 10, halfY: EXIT.shaftHalfY - 12, minZ: LEVELS.platformTopZ, maxZ: EXIT.wellTopZ - 8 },
+        wellCatchZ,
+        (x, y, z) => shaftSplashes?.spawn(x, y, z, splashShaft, NIGHT.splash.maxRadius.shaft, NIGHT.splash.life.shaft),
+      )
+      shaft.mesh.name = `rain-stairwell-${offset / batchSize}`
+      group.add(shaft.mesh)
+      fields.push(shaft)
+      disposers.push(() => shaft.dispose())
+    }
     built.push('rain:stairwell')
   } catch (err) {
     warnOnce('sky-rain-shaft', '[sky] the rain down the stairwell could not be built; the exit will be dry.', err)
@@ -1471,7 +1476,7 @@ export function initSky(scene, renderer = null) {
 
   console.info(
     `[sky] night built: ${built.join(', ') || 'nothing'} — ` +
-      `${NIGHT.rain.outside.count + NIGHT.rain.shaft.count} drops in 2 instanced fields, ` +
+      `${NIGHT.rain.outside.count + NIGHT.rain.shaft.count} drops in ${fields.length} instanced fields, ` +
       `${NIGHT.splash.count.outside + NIGHT.splash.count.shaft} splash rings, moon at ${NIGHT.moon.altitudeDeg}° / ${NIGHT.moon.azimuthDeg}°`,
   )
 
