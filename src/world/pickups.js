@@ -727,11 +727,27 @@ export class PickupManager {
     }
 
     const slot = pointIndex % this.points.length
+    if (this.occupied.has(slot)) return null
+    for (const old of [...this.pickups]) {
+      if (old.pointIndex === slot && old.dead) this.retire(old)
+    }
     const pickup = new Pickup(def, point, slot, this.geo, this.rng, this.pointLights[slot])
     this.group.add(pickup.root)
     this.pickups.push(pickup)
     this.occupied.set(pickup.pointIndex, pickup)
     return pickup
+  }
+
+  retire(pickup) {
+    if (this.occupied.get(pickup.pointIndex) === pickup) {
+      this.occupied.delete(pickup.pointIndex)
+      pickup.light.intensity = 0
+    }
+    pickup.active = false
+    pickup.dead = true
+    this.group.remove(pickup.root)
+    const index = this.pickups.indexOf(pickup)
+    if (index >= 0) this.pickups.splice(index, 1)
   }
 
   /** Deal opening equipment without consuming the wave supply allowance. */
@@ -750,11 +766,7 @@ export class PickupManager {
     for (let i = this.pickups.length - 1; i >= 0; i--) {
       const pickup = this.pickups[i]
       if (pickup.def.kind !== 'health' && pickup.def.kind !== 'armor') continue
-      pickup.consume()
-      this.group.remove(pickup.root)
-      pickup.disposeMaterials()
-      if (this.occupied.get(pickup.pointIndex) === pickup) this.occupied.delete(pickup.pointIndex)
-      this.pickups.splice(i, 1)
+      this.retire(pickup)
     }
     const free = this.points.map((_, index) => index).filter(index => !this.occupied.has(index))
     const placed = []
@@ -776,15 +788,18 @@ export class PickupManager {
     const cycle = WAVES.REWARD.cycle
     const id = cycle[waveNumber % cycle.length]
 
-    const candidates = []
-    for (let i = 0; i < this.points.length; i++) {
-      if (!WAVES.REWARD.checksOccupancy || !this.occupied.has(i)) candidates.push(i)
+    const isSupply = p => p.def.kind === 'health' || p.def.kind === 'armor'
+    while ([...this.occupied.values()].filter(p => !isSupply(p)).length >= this.points.length - 2) {
+      const oldest = this.pickups.find(p => p.active && p.reward)
+      if (!oldest) return null
+      this.retire(oldest)
     }
-    // With every point taken the original's behaviour is the only behaviour left: drop it
-    // somewhere and let it overlap.
-    const pool = candidates.length > 0 ? candidates : this.points.map((_, i) => i)
-    const index = pool[Math.min(pool.length - 1, Math.floor(this.rng.next() * pool.length))]
-    return this.place(id, index)
+    const candidates = this.points.map((_, i) => i).filter(i => !this.occupied.has(i))
+    if (!candidates.length) return null
+    const index = candidates[Math.min(candidates.length - 1, Math.floor(this.rng.next() * candidates.length))]
+    const pickup = this.place(id, index)
+    if (pickup) pickup.reward = true
+    return pickup
   }
 
   /**
@@ -842,7 +857,7 @@ export class PickupManager {
     if (!granted) return
 
     pickup.consume()
-    this.occupied.delete(pickup.pointIndex)
+    if (this.occupied.get(pickup.pointIndex) === pickup) this.occupied.delete(pickup.pointIndex)
 
     if (!this.emitEvents) return
     const payload = {
@@ -865,6 +880,7 @@ export class PickupManager {
     }
     this.pickups.length = 0
     this.occupied.clear()
+    for (const light of this.pointLights) light.intensity = 0
     this.dealOpeningLoadout()
   }
 

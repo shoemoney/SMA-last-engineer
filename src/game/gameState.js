@@ -16,6 +16,7 @@ import { bus as defaultBus, EV } from '../core/events.js'
 import { rng as defaultRng } from '../core/rng.js'
 import { WaveDirector, WAVE_STATE } from './waveDirector.js'
 import { Scoring } from './scoring.js'
+import { runScore } from './runScore.js'
 import { recordRunResult } from './save.js'
 
 const [MENU, HOW_TO_PLAY, INTERMISSION, FIGHT, GAME_OVER] = RUN.STATES
@@ -39,6 +40,8 @@ export class GameState {
     this.totalKills = RUN.initialTotalKills
     this.runStartTime = RUN.initialRunStartTime
     this.runOver = RUN.initialRunOver
+    this.completedWaves = 0
+    this.combatSeconds = 0
     this.elapsed = 0
     this.lastRunSummary = null
 
@@ -47,7 +50,11 @@ export class GameState {
       bus.on(EV.PLAYER_DEATH, () => this.playerDied()),
       bus.on(EV.PLAYER_HIT, () => this.scoring.registerDamageTaken()),
       bus.on(EV.WAVE_START, ({ wave }) => { this.currentWave = wave }),
-      bus.on(EV.WAVE_CLEAR, ({ wave }) => this.scoring.registerWaveClear(wave)),
+      bus.on(EV.WAVE_CLEAR, ({ wave }) => {
+        if (wave <= this.completedWaves) return
+        this.completedWaves = wave
+        this.scoring.registerWaveClear(wave)
+      }),
     ]
   }
 
@@ -76,28 +83,31 @@ export class GameState {
     this.currentWave = WAVES.initialWaveCounter
     this.totalKills = RUN.initialTotalKills
     this.runOver = RUN.initialRunOver
+    this.completedWaves = 0
+    this.combatSeconds = 0
     this.elapsed = 0
     this.runStartTime = RUN.initialRunStartTime
     this.lastRunSummary = null
 
     this.scoring.reset()
-    this.director.start(WAVES.firstWaveNumber)
-    this.setState(FIGHT)
+    this.director.prepare()
+    this.setState(INTERMISSION)
   }
 
   /** The game-over screen's RETRY. Identical to a fresh start; the save already holds the last run. */
   retry() { this.startRun() }
 
-  update(dt) {
+  update(dt, realDt = dt) {
     if (this.state === MENU || this.state === HOW_TO_PLAY) return
     if (this.runOver && WAVES.haltOnPlayerDeath) return
 
-    this.elapsed += dt
+    this.elapsed += realDt
+    if ([WAVE_STATE.spawning, WAVE_STATE.fighting].includes(this.director.state)) this.combatSeconds += dt
     this.scoring.update(this.elapsed)
-    this.director.update(dt)
+    this.director.update(dt, realDt)
 
     if (this.state === FIGHT || this.state === INTERMISSION) {
-      this.setState(this.director.state === WAVE_STATE.intermission ? INTERMISSION : FIGHT)
+      this.setState([WAVE_STATE.preparation, WAVE_STATE.intermission].includes(this.director.state) ? INTERMISSION : FIGHT)
     }
   }
 
@@ -128,7 +138,10 @@ export class GameState {
       kills: this.totalKills,
       headshots,
       duration,
-      score: this.scoring.score,
+      score: this.score,
+      scoringVersion: 2,
+      completedWaves: this.completedWaves,
+      combatSeconds: this.combatSeconds,
       previousBest: banked.previousBest,
       bestWave: banked.record.bestWave,
       isNewBest: banked.isNewBest,
@@ -142,7 +155,7 @@ export class GameState {
 
   get zombiesAlive() { return this.director.zombiesAlive }
   get wave() { return this.currentWave }
-  get score() { return this.scoring.score }
+  get score() { return runScore(this.completedWaves, this.combatSeconds) }
   get isPlaying() { return this.state === FIGHT || this.state === INTERMISSION }
 
   /** The shape src/main.js folds into globalThis.__SHOE__.state() for the verify harness. */
@@ -151,7 +164,10 @@ export class GameState {
     return {
       state: this.state,
       wave: this.currentWave,
-      score: this.scoring.score,
+      score: this.score,
+      scoringVersion: 2,
+      completedWaves: this.completedWaves,
+      combatSeconds: this.combatSeconds,
       kills: this.totalKills,
       zombies: d.zombiesAlive,
       remaining: d.remaining,

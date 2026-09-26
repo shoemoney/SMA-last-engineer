@@ -718,6 +718,8 @@ export class Game {
     this.bus = bus
     this.rng = rng
 
+    this.paused = false
+    this.speed = 1
     this.elapsed = 0
     this.frames = 0
     this.cinematic = null
@@ -834,6 +836,7 @@ export class Game {
     this.entryRng = new Rng(0x57a1 ^ 0x9e3779b9)
 
     this.zombieWorld = {
+      projectileColliders: this.colliderBoxes,
       player: this.playerProxy,
       obstacles: this.#columnObstacles(),
       hasLineOfSight: (from, to) => this.#hasLineOfSight(from, to),
@@ -987,7 +990,7 @@ export class Game {
       const warmupPickups = [...new Set([...WAVES.REWARD.cycle, 'health', 'armor'])]
       for (let i = 0; i < warmupPickups.length; i++) {
         try {
-          const pickup = this.pickups.place(warmupPickups[i], i % Math.max(1, this.pickups.points.length))
+          const pickup = this.pickups.place(warmupPickups[i], this.pickups.points.findIndex((_, slot) => !this.pickups.occupied.has(slot)))
           if (pickup) {
             // Normal platform points are outside this underground camera's frustum.
             // A compact grid makes every temporary model visible before reset removes it.
@@ -1826,6 +1829,8 @@ export class Game {
   }
 
   startRun() {
+    this.paused = false
+    this.speed = 1
     this.stage = null
     this.cinematic = null
     this.lowHealthLatched = false
@@ -1852,6 +1857,7 @@ export class Game {
 
     this.fx.reset()
     this.gameState.startRun()
+    this.pickups.beginWave(1)
   }
 
   /** True while the player has control. False in the menu, and false once they are dead. */
@@ -1862,7 +1868,33 @@ export class Game {
   // -------------------------------------------------------------------------
 
   /** @param {number} dt always STEP — the loop never hands this a variable slice. */
+  setPaused(paused) {
+    this.paused = Boolean(paused)
+    if (this.paused) {
+      this.input?.reset?.()
+      this.weapons.setTrigger(false)
+    }
+  }
+
+  setSpeed(speed) {
+    if (![0.5, 1, 1.5, 2].includes(speed)) return false
+    this.speed = speed
+    return true
+  }
+
+  startNextWave() {
+    if (!this.playing) return false
+    return this.gameState.director.startNextWave()
+  }
+
   update(dt) {
+    if (this.paused && this.playing) return
+    const speed = this.playing ? this.speed : 1
+    const steps = Math.ceil(speed)
+    for (let i = 0; i < steps; i++) this.updateStep(dt * speed / steps, dt / steps)
+  }
+
+  updateStep(dt, realDt) {
     this.elapsed += dt
 
     // The level breathes whether or not anyone is playing: the failing tube stutters behind
@@ -1914,13 +1946,13 @@ export class Game {
     this.pickups.update(dt, playing ? this.player : null)
     this.summitPickups?.update(dt, playing ? this.player : null)
     this.#pollSummit()
-    this.gameState.update(dt)
+    this.gameState.update(dt, realDt)
 
     if (this.stage) this.#sustainStage()
 
     this.hud?.update(this.hudSnapshot())
     this.#updateListener()
-    this.sound?.update(dt)
+    this.sound?.update(realDt)
   }
 
   /** Input -> the weapon system. The player only tracks the trigger edge; the gun owns the shot. */
@@ -2190,6 +2222,9 @@ export class Game {
     const ammo = this.weapons.ammoState()
     return {
       ...run,
+      paused: this.paused,
+      speed: this.speed,
+      phase: this.gameState.director.state,
       health: this.player.healthValue,
       armor: this.player.armorValue,
       alive: this.player.alive && !this.gameState.runOver,

@@ -19,6 +19,7 @@ import { rng as defaultRng } from '../core/rng.js'
  */
 export const WAVE_STATE = Object.freeze({
   idle: 'idle',
+  preparation: 'preparation',
   trainArriving: 'trainArriving',
   spawning: 'spawning',
   fighting: 'fighting',
@@ -183,6 +184,21 @@ export class WaveDirector {
     this.startWave(waveNumber)
   }
 
+  prepare() {
+    this.reset()
+    this.running = true
+    this.state = WAVE_STATE.preparation
+    this.countdownRemaining = 30
+    this.countdownTimer = WAVES.countdownTickInterval
+    this.emitCountdown()
+  }
+
+  startNextWave() {
+    if (!this.running || ![WAVE_STATE.preparation, WAVE_STATE.intermission].includes(this.state)) return false
+    this.startWave(this.currentWave + 1)
+    return true
+  }
+
   /** Freeze the loop. The original left it running under the game-over screen; the port halts. */
   stop() { this.running = false }
 
@@ -216,7 +232,7 @@ export class WaveDirector {
     this.bus.emit(EV.TRAIN_INBOUND, { phase: TRAIN_PHASE.arriving, seconds: TRAIN.arrivalTime, wave: waveNumber })
   }
 
-  update(dt) {
+  update(dt, realDt = dt) {
     if (!this.running) return
 
     switch (this.state) {
@@ -238,8 +254,9 @@ export class WaveDirector {
         this.releaseTick(dt)
         break
 
+      case WAVE_STATE.preparation:
       case WAVE_STATE.intermission:
-        this.tickCountdown(dt)
+        this.tickCountdown(realDt)
         break
     }
   }
@@ -353,7 +370,7 @@ export class WaveDirector {
 
   tickCountdown(dt) {
     this.countdownTimer -= dt
-    while (this.countdownTimer <= 0) {
+    while (this.countdownTimer <= 1e-9) {
       this.countdownRemaining -= 1
       this.emitCountdown()
       if (this.countdownRemaining <= 0) {

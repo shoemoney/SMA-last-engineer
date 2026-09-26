@@ -744,8 +744,7 @@ export function initAudio({ bus = defaultBus, autoUnlock = true } = {}) {
   })
   on(EV.STATE_CHANGE, (p) => {
     const state = p?.state ?? p
-    // Retry enters fight directly; ordinary wave transitions keep their active speech.
-    if (state === 'fight' && ['menu', 'howToPlay', 'gameOver'].includes(p?.previous)) {
+    if (['fight', 'intermission'].includes(state) && ['menu', 'howToPlay', 'gameOver'].includes(p?.previous)) {
       combat.reset()
       voice.reset()
     }
