@@ -22,6 +22,7 @@
  */
 
 import * as THREE from 'three/webgpu'
+import { abs, attribute, dot, normalView, positionView, positionViewDirection, pow, smoothstep } from 'three/tsl'
 import { STATION, TRAIN, FX, AUDIO, WAVES } from '../game/rules.js'
 import { bus, EV } from '../core/events.js'
 import { Rng, rng as defaultRng } from '../core/rng.js'
@@ -1569,24 +1570,24 @@ export class Train {
         true,
       )
       applyHazeFalloff(coneGeo, MODEL.hazeConeLength)
-      const cone = new THREE.Mesh(
-        coneGeo,
-        new THREE.MeshBasicMaterial({
-          color: TRAIN.headlightColorHex,
-          transparent: true,
-          // Parked is the state the arrival frame is actually captured in, so the shaft
-          // starts there rather than fading up from nothing and missing an early capture.
-          opacity: MODEL.hazeConeOpacity * MODEL.hazeIdleFraction,
-          blending: THREE.AdditiveBlending,
-          depthWrite: false,
-          side: THREE.DoubleSide,
-          vertexColors: true,
-          // Scene fog MIXES toward the fog colour, and on an additive surface that means
-          // the far end of the shaft gets brighter the deeper into the haze it goes —
-          // exactly backwards. The vertex ramp above is doing this job properly.
-          fog: false,
-        }),
-      )
+      const coneMaterial = new THREE.MeshBasicNodeMaterial({
+        color: TRAIN.headlightColorHex,
+        transparent: true,
+        // Parked is the state the arrival frame is actually captured in, so the shaft
+        // starts there rather than fading up from nothing and missing an early capture.
+        opacity: MODEL.hazeConeOpacity * MODEL.hazeIdleFraction,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.BackSide,
+        // Scene fog MIXES toward the fog colour, and on an additive surface that means
+        // the far end of the shaft gets brighter the deeper into the haze it goes —
+        // exactly backwards. The vertex ramp above is doing this job properly.
+        fog: false,
+      })
+      coneMaterial.colorNode = attribute('color', 'vec3')
+        .mul(pow(abs(dot(normalView, positionViewDirection)), 1.35))
+        .mul(smoothstep(90, 560, positionView.z.negate()))
+      const cone = new THREE.Mesh(coneGeo, coneMaterial)
       // Rotating +90 about Z sends the cone's +Y apex to -X, so pushing the cone forward by
       // half its length leaves the apex sitting exactly on the lamp. Stands in for a
       // volumetric shaft, which is what sells the approach through the tunnel haze.

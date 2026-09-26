@@ -1877,6 +1877,13 @@ export class Zombie {
   /** §3.3. Holds an 800-1000 cm band and fires whenever it has a sightline, in any band. */
   _tickRanged(dt, world, player) {
     const distance = this.position.distanceTo(player.position)
+    const canSee = this._lineOfSight(world, player)
+    if (!canSee) {
+      this.band = 'reposition'
+      this.state = 'chase'
+      this._requestChase(dt, world, player.position, AI.rangedAcceptanceRadius)
+      return
+    }
     const far = this.desiredRange + AI.rangedTolerance
     const near = this.desiredRange - AI.rangedTolerance
 
@@ -1895,9 +1902,8 @@ export class Zombie {
       this._stopMovement()
     }
 
-    const canSee = this._lineOfSight(world, player)
-    this.state = canSee ? 'attack' : 'chase'
-    if (canSee) this._tryRangedAttack(player)
+    this.state = 'attack'
+    this._tryRangedAttack(player)
   }
 
   /** §3.4. Repath every 0.25 s; `usingDirectSteering` latches and is only re-evaluated then. */
@@ -2606,7 +2612,7 @@ export class ZombiePool {
       this._free[zombie.typeId].push(zombie)
     }
 
-    this.projectiles.update(dt, this._pawns(world))
+    this.projectiles.update(dt, this._pawns(world), world.projectileColliders)
     this.sync()
   }
 

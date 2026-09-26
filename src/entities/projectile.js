@@ -1,12 +1,8 @@
 /**
  * projectile.js — the Spitter's bile round.
  *
- * Simulation is spec/zombies.md §4.3 verbatim: a 10 cm sphere at a constant 1800 cm/s with
- * gravityScale 0, a 6 s life (10 800 cm of travel), overlap-only collision that responds to
- * PAWNS ONLY. It passes straight through walls, columns and the train because the original's
- * collision profile ignored world geometry entirely — that is not a port shortcut, it is the
- * behaviour. It is consumed by the first pawn it touches that owns a health pool, including a
- * friendly zombie: the only exemption is the shooter itself.
+ * Bile sweeps its collision sphere against solid world boxes and pawn capsules. The first
+ * contact consumes the round. Its owner is exempt; other zombies remain valid targets.
  *
  * The original spawned no mesh, sprite, particle or trail for it, which meant the Spitter's
  * only attack was completely invisible. Everything visual below is marked CHOSEN in
@@ -54,6 +50,13 @@ const _d2 = new THREE.Vector3()
 const _r = new THREE.Vector3()
 const _c1 = new THREE.Vector3()
 const _c2 = new THREE.Vector3()
+const _contactEnd = new THREE.Vector3()
+const _worldStart = new THREE.Vector3()
+const _worldEnd = new THREE.Vector3()
+const _worldDirection = new THREE.Vector3()
+const _worldHit = new THREE.Vector3()
+const _expandedBox = new THREE.Box3()
+const _worldRay = new THREE.Ray()
 
 /**
  * Squared distance between segment (p1,q1) and segment (p2,q2).
@@ -125,9 +128,10 @@ export class Projectile {
   /**
    * @param {number} dt
    * @param {Array<{position:THREE.Vector3, radius:number, halfHeight:number, health?:object, isDead?:boolean}>} pawns
+   * @param {THREE.Box3[]} colliders solid bounds in Three.js Y-up coordinates
    * @returns {boolean} still alive
    */
-  advance(dt, pawns) {
+  advance(dt, pawns, colliders = []) {
     if (!this.alive) return false
 
     this.age += dt
@@ -143,18 +147,23 @@ export class Projectile {
     this.previous.copy(this.position)
     this.position.addScaledVector(this.velocity, dt)
 
-    // No world-geometry test and no bounce test exist on purpose: P.bounces is false and the
-    // collision profile ignores everything that is not a pawn, so there is nothing to hit.
-    for (let i = 0; i < pawns.length; i++) {
-      const pawn = pawns[i]
-      if (!pawn || pawn === this.owner || pawn.isDead) continue
-      if (!this._touches(pawn)) continue
-
-      // §4.3: a pawn without a health pool does not stop the round, it keeps flying.
-      if (!pawn.health) continue
-
-      const dealt = pawn.health.applyDamage(this.damage, false, this.owner)
-      this.onHit?.(pawn, dealt, this.owner)
+    const wallFraction = this._worldContact(colliders)
+    let firstFraction = wallFraction
+    let firstPawn = null
+    for (const pawn of pawns) {
+      if (!pawn || pawn === this.owner || pawn.isDead || !pawn.health) continue
+      const fraction = this._pawnContact(pawn)
+      if (fraction < firstFraction) {
+        firstFraction = fraction
+        firstPawn = pawn
+      }
+    }
+    if (firstFraction <= 1) {
+      this.position.lerpVectors(this.previous, this.position, firstFraction)
+      if (firstPawn) {
+        const dealt = firstPawn.health.applyDamage(this.damage, false, this.owner)
+        this.onHit?.(firstPawn, dealt, this.owner)
+      }
       this.alive = false
       return false
     }
@@ -162,15 +171,38 @@ export class Projectile {
     return true
   }
 
-  _touches(pawn) {
-    const r = pawn.radius
-    const hh = pawn.halfHeight
-    // A capsule's axis is the segment between its two cap centres, not its full height.
-    const spine = Math.max(0, hh - r)
+  _pawnContact(pawn) {
+    const spine = Math.max(0, pawn.halfHeight - pawn.radius)
     _axisA.set(pawn.position.x, pawn.position.y, pawn.position.z - spine)
     _axisB.set(pawn.position.x, pawn.position.y, pawn.position.z + spine)
-    const reach = r + P.radius
-    return segmentDistanceSq(this.previous, this.position, _axisA, _axisB) <= reach * reach
+    const reachSq = (pawn.radius + P.radius) ** 2
+    if (segmentDistanceSq(this.previous, this.position, _axisA, _axisB) > reachSq) return Infinity
+    let lo = 0, hi = 1
+    for (let i = 0; i < 16; i++) {
+      const mid = (lo + hi) * 0.5
+      _contactEnd.lerpVectors(this.previous, this.position, mid)
+      if (segmentDistanceSq(this.previous, _contactEnd, _axisA, _axisB) <= reachSq) hi = mid
+      else lo = mid
+    }
+    return hi
+  }
+
+  _worldContact(colliders) {
+    _worldStart.set(this.previous.x, this.previous.z, -this.previous.y)
+    _worldEnd.set(this.position.x, this.position.z, -this.position.y)
+    _worldDirection.subVectors(_worldEnd, _worldStart)
+    const length = _worldDirection.length()
+    if (length === 0) return Infinity
+    _worldRay.set(_worldStart, _worldDirection.divideScalar(length))
+    let first = Infinity
+    for (const box of colliders) {
+      _expandedBox.copy(box).expandByScalar(P.radius)
+      if (_expandedBox.containsPoint(_worldStart)) return 0
+      if (!_worldRay.intersectBox(_expandedBox, _worldHit)) continue
+      const fraction = _worldHit.distanceTo(_worldStart) / length
+      if (fraction <= 1) first = Math.min(first, fraction)
+    }
+    return first
   }
 }
 
@@ -309,11 +341,12 @@ export class ProjectilePool {
    * @param {Array<{position:THREE.Vector3, radius:number, halfHeight:number, health?:object, isDead?:boolean}>} pawns
    *        every body a spit can hit: the player and every living zombie. There is no
    *        friendly-fire exemption beyond the shooter itself (§4.3).
+   * @param {THREE.Box3[]} colliders solid bounds in Three.js Y-up coordinates
    */
-  update(dt, pawns = []) {
+  update(dt, pawns = [], colliders = []) {
     for (let i = this.live.length - 1; i >= 0; i--) {
       const p = this.live[i]
-      if (!p.advance(dt, pawns)) {
+      if (!p.advance(dt, pawns, colliders)) {
         this.live.splice(i, 1)
         p.owner = null
         this._free.push(p)

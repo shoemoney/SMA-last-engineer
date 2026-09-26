@@ -24,7 +24,6 @@ import { rng as sharedRng } from '../core/rng.js'
 import {
   MOD,
   addMod,
-  damageNumberValue,
   firePresentation,
   modBadges,
   resolveModdedShot,
@@ -339,8 +338,12 @@ export class Weapon {
     const pool = poolOf(actor)
 
     if (pool) {
+      const healthBefore = pool.health
       this.applyDirect(actor, pool, result)
-      this.fxDamageNumber({ point: hit.point.clone(), value: damageNumberValue(result), zone })
+      const removed = healthBefore - pool.health
+      if (Number.isFinite(removed) && removed > 0) {
+        this.fxDamageNumber({ point: hit.point.clone(), value: Math.round(removed), zone })
+      }
       this.fxBloodDecal({ point: hit.point.clone(), normal: hit.normal.clone(), zone })
     }
 
