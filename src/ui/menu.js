@@ -9,6 +9,7 @@
  */
 
 import { MENU } from '../game/rules.js'
+import { isInteractiveTarget } from '../core/input.js'
 import {
   byId,
   showScreen,
@@ -71,7 +72,7 @@ export function initMenu({ onPlay, onMenu, jeremyMuted = false, onJeremyMutedCha
    * anything on the game-over screen, where it walks to the title.
    */
   function onKeyDown(event) {
-    if (event.target === muteJeremy || event.target?.closest?.('input, textarea, select, button, [contenteditable="true"]')) return
+    if (event.target === muteJeremy || isInteractiveTarget(event.target)) return
     const menuUp = isScreenVisible(SCREEN_IDS.menu)
     const overUp = isScreenVisible(SCREEN_IDS.gameover)
     if (!menuUp && !overUp) return

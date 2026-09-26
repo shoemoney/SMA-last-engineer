@@ -32,3 +32,15 @@ it('reflects the saved mute preference, reports changes, and leaves focused chec
   menu.destroy()
   expect(checkboxListeners.size).toBe(0)
 })
+
+it('lets Enter open the hero scoreboard disclosure without starting a run', async () => {
+  const listeners = new Map()
+  vi.stubGlobal('window', { addEventListener:(type, fn) => listeners.set(type, fn), removeEventListener:type => listeners.delete(type) })
+  const { initMenu } = await import('../src/ui/menu.js')
+  const onPlay = vi.fn(), preventDefault = vi.fn()
+  const menu = initMenu({ onPlay })
+  listeners.get('keydown')({ target:{tagName:'SUMMARY'}, code:'Enter', preventDefault })
+  expect(onPlay).not.toHaveBeenCalled()
+  expect(preventDefault).not.toHaveBeenCalled()
+  menu.destroy()
+})
