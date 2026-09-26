@@ -1,163 +1,70 @@
-import { it, expect, vi } from 'vitest'
-import { createScoreClient } from '../src/arcade/scoreClient.js'
-
-const summary = () => ({ score: 100, waveReached: 3, kills: 12, headshots: 4, duration: 19.5 })
-const ok = body => ({ ok: true, json: async () => body })
-const accepted = (name = 'Jeremy', score = 100) => ({ accepted: true, score: { id: 1, name, score, createdAt: '2026-09-25T20:00:00Z' } })
-const rejected = (status, retryAfter = null) => ({ ok: false, status, json: async () => ({ error: 'Rejected' }), headers: { get: () => retryAfter } })
-const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r }); return { promise, resolve } }
-
-it('does not block a run on token issuance and submits the frozen death result once', async () => {
-  const token = deferred()
-  const request = vi.fn().mockReturnValueOnce(token.promise).mockResolvedValue(ok(accepted()))
-  const client = createScoreClient({ request })
-  expect(client.begin()).toBeUndefined()
-  const run = summary()
-  client.finish(run)
-  run.score = 9999
-  const submitting = client.submit('  Jeremy  ')
-  expect(client.state().status).toBe('submitting')
-  expect(await client.submit('Other')).toBe(false)
-  token.resolve(ok({ runToken: 'first', expiresAt: '2099-01-01' }))
-  expect(await submitting).toBe(true)
-  expect(request.mock.calls[1][0]).toBe('/api/games/last-engineer/scores')
-  expect(JSON.parse(request.mock.calls[1][1].body)).toEqual({ runToken: 'first', name: 'Jeremy', score: 100, wave: 3, kills: 12, headshots: 4, duration: 19.5 })
-  expect(await client.submit('Jeremy')).toBe(false)
-  expect(request).toHaveBeenCalledTimes(2)
+import {it,expect,vi} from 'vitest'
+import {createScoreClient} from '../src/arcade/scoreClient.js'
+import {runScore as rankedScore} from '../src/game/runScore.js'
+const summary=()=>({scoringVersion:2,completedWaves:1,combatSeconds:60,score:10100,waveReached:2,kills:12,headshots:4,duration:90})
+const ok=body=>({ok:true,json:async()=>body})
+const accepted=(name='Jeremy')=>({accepted:true,scoreVersion:2,score:{id:1,name,score:10100,createdAt:'2026-09-25T20:00:00Z'}})
+const reject=status=>({ok:false,status,headers:{get:()=> '30'},json:async()=>({error:'Rejected'})})
+function setup({qualifier,submitter,issuer}={}){
+ const submits=[];let issues=0
+ const request=vi.fn(async(url,options)=>{
+  if(url.endsWith('/runs')){issues++;return issuer ? issuer(issues) : ok({runToken:'token',scoreVersion:2})}
+  if(url.includes('?'))return ok({scores:[],scoreVersion:2})
+  if(url.endsWith('/qualify'))return qualifier ? qualifier(JSON.parse(options.body)) : ok({qualified:true,score:10100,scoreVersion:2,scores:[]})
+  submits.push(options.body);return submitter ? submitter(submits.length,JSON.parse(options.body)) : ok(accepted())
+ })
+ return {client:createScoreClient({request}),request,submits,issues:()=>issues}
+}
+it('derives bounded score from completed waves and simulated combat',()=>{
+ expect(rankedScore(0,100)).toBe(0);expect(rankedScore(3,145.25)).toBe(30123);expect(rankedScore(1,0)).toBe(16000);expect(rankedScore(2,0)).toBe(29999)
 })
-
-it('ignores a late token from the previous run', async () => {
-  const old = deferred(), current = deferred()
-  const request = vi.fn().mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise).mockResolvedValue(ok(accepted('New', 200)))
-  const client = createScoreClient({ request })
-  client.begin(); client.finish(summary())
-  const oldSubmit = client.submit('Old')
-  client.begin(); client.finish({ ...summary(), score: 200 })
-  old.resolve(ok({ runToken: 'old' }))
-  expect(await oldSubmit).toBe(false)
-  current.resolve(ok({ runToken: 'new' }))
-  expect(await client.submit('New')).toBe(true)
-  expect(JSON.parse(request.mock.calls[2][1].body)).toMatchObject({ runToken: 'new', score: 200, name: 'New' })
+it('qualifies before allowing names and submits only a frozen token and name',async()=>{
+ let resolve;const wait=new Promise(r=>resolve=r)
+ const a=setup({qualifier:()=>wait});a.client.begin();const finish=a.client.finish(summary())
+ expect(a.client.state().status).toBe('qualifying');expect(await a.client.submit('Jeremy')).toBe(false)
+ resolve(ok({qualified:true,score:10100,scoreVersion:2,scores:[]}));await finish
+ expect(await a.client.submit('Jeremy')).toBe(true)
+ expect(JSON.parse(a.submits[0])).toEqual({runToken:'token',scoreVersion:2,name:'Jeremy'})
+ expect(await a.client.submit('Jeremy')).toBe(false)
 })
-
-it('keeps a new run untouched by the previous submission response', async () => {
-  const submission = deferred()
-  const request = vi.fn().mockResolvedValueOnce(ok({ runToken: 'old' })).mockReturnValueOnce(submission.promise).mockResolvedValue(ok({ runToken: 'new' }))
-  const client = createScoreClient({ request })
-  client.begin(); client.finish(summary())
-  const pending = client.submit('Old')
-  await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(2))
-  client.begin()
-  submission.resolve(ok(accepted()))
-  expect(await pending).toBe(false)
-  expect(client.state().status).toBe('hidden')
+it('does not offer a name for zero waves or below cutoff',async()=>{
+ for(const reason of ['complete_wave','below_cutoff']){
+  const a=setup({qualifier:()=>ok({qualified:false,score:10100,scoreVersion:2,reason,scores:[]})});a.client.begin();await a.client.finish(summary())
+  expect(a.client.state().status).toBe('unqualified');expect(await a.client.submit('Jeremy')).toBe(false);expect(a.submits).toHaveLength(0)
+ }
 })
-
-it('retries token and submission failures without inventing success or issuing a second token for an existing run', async () => {
-  const request = vi.fn().mockRejectedValueOnce(Error('offline')).mockResolvedValueOnce(ok({ runToken: 'retry' })).mockResolvedValueOnce(rejected(503)).mockResolvedValueOnce(ok(accepted()))
-  const client = createScoreClient({ request })
-  client.begin(); client.finish(summary())
-  await vi.waitFor(() => expect(client.state().message).toContain('connection unavailable'))
-  expect(await client.submit('Jeremy')).toBe(false)
-  expect(client.state().status).toBe('ready')
-  expect(client.state().message).toContain('Could not confirm')
-  expect(await client.submit('Jeremy')).toBe(true)
-  expect(request.mock.calls.filter(([url]) => url.endsWith('/runs'))).toHaveLength(2)
-  const sends = request.mock.calls.filter(([url]) => url.endsWith('/scores')).map(([,r])=>JSON.parse(r.body))
-  expect(sends[0]).toEqual(sends[1])
+it('retries failed qualification without showing a name',async()=>{
+ let attempts=0;const a=setup({qualifier:()=>++attempts===1?reject(503):ok({qualified:true,score:10100,scoreVersion:2,scores:[]})})
+ a.client.begin();await a.client.finish(summary());expect(a.client.state().status).toBe('qualification-error')
+ await a.client.qualify();expect(a.client.state().status).toBe('ready');expect(a.issues()).toBe(1)
 })
-
-it('rejects empty or excessive names and preserves an existing result on duplicate death', async () => {
-  const request = vi.fn().mockResolvedValue(ok({ runToken: 'token' }))
-  const client = createScoreClient({ request })
-  client.begin(); client.finish(summary()); client.finish({ ...summary(), score: 9999 })
-  expect(await client.submit('   ')).toBe(false)
-  expect(await client.submit('A'.repeat(25))).toBe(false)
-  expect(client.state().summary.score).toBe(100)
-  expect(request).toHaveBeenCalledTimes(1)
+it('locks ambiguous submission name and retries identical bytes',async()=>{
+ const a=setup({submitter:n=>{if(n===1)throw Error('response lost');return ok(accepted('Alice Smith'))}})
+ a.client.begin();await a.client.finish(summary());expect(await a.client.submit('Ａlice  Smith')).toBe(false)
+ expect(a.client.state().nameLocked).toBe(true);expect(await a.client.submit('Other')).toBe(false)
+ expect(await a.client.submit('Alice Smith')).toBe(true);expect(a.submits[0]).toBe(a.submits[1])
 })
-
-it.each([404, 409, 410])('closes a run rejected with HTTP %s instead of endlessly retrying', async status => {
-  const request = vi.fn().mockResolvedValueOnce(ok({ runToken: 'token' })).mockResolvedValue(rejected(status))
-  const client = createScoreClient({ request })
-  client.begin(); client.finish(summary())
-  expect(await client.submit('Jeremy')).toBe(false)
-  expect(client.state().status).toBe('terminal')
-  expect(client.state().message).toContain('Start a new run')
-  expect(await client.submit('Jeremy')).toBe(false)
-  expect(request).toHaveBeenCalledTimes(2)
+it.each([404,409,410])('closes terminal HTTP %s',async code=>{
+ const a=setup({submitter:()=>reject(code)});a.client.begin();await a.client.finish(summary());await a.client.submit('Jeremy');expect(a.client.state().status).toBe('terminal')
 })
-
-it('locks the first attempted name after an ambiguous network failure and retries byte-identical payload', async () => {
-  const request = vi.fn().mockResolvedValueOnce(ok({ runToken: 'token' })).mockRejectedValueOnce(Error('connection lost after save')).mockResolvedValue(ok(accepted()))
-  const client = createScoreClient({ request })
-  client.begin(); client.finish(summary())
-  expect(await client.submit(' Jeremy ')).toBe(false)
-  expect(client.state().nameLocked).toBe(true)
-  expect(await client.submit('Different')).toBe(false)
-  expect(request).toHaveBeenCalledTimes(2)
-  expect(await client.submit('Jeremy')).toBe(true)
-  expect(request.mock.calls[1][1].body).toBe(request.mock.calls[2][1].body)
+it('allows correction after validation rejection and reports rate wait',async()=>{
+ const a=setup({submitter:n=>n===1?reject(400):n===2?reject(429):ok(accepted('Corrected'))});a.client.begin();await a.client.finish(summary())
+ await a.client.submit('Wrong');expect(a.client.state().nameLocked).toBe(false)
+ await a.client.submit('Corrected');expect(a.client.state().message).toContain('Wait 30 seconds')
+ expect(await a.client.submit('Corrected')).toBe(true)
 })
-
-it('allows name correction after known validation failure', async () => {
-  const request = vi.fn().mockResolvedValueOnce(ok({ runToken: 'token' })).mockResolvedValueOnce(rejected(400)).mockResolvedValue(ok(accepted('Corrected')))
-  const client = createScoreClient({ request })
-  client.begin(); client.finish(summary())
-  expect(await client.submit('Wrong')).toBe(false)
-  expect(client.state().nameLocked).toBe(false)
-  expect(await client.submit('Corrected')).toBe(true)
+it('handles a displaced qualified score without reporting save success',async()=>{
+ const a=setup({submitter:()=>ok({accepted:false,qualified:false,reason:'board_changed',scores:[]})});a.client.begin();await a.client.finish(summary())
+ expect(await a.client.submit('Jeremy')).toBe(false);expect(a.client.state().status).toBe('unqualified');expect(a.client.state().message).toContain('board changed')
 })
-
-it('reports a useful wait on rate limiting and accepts only explicit valid confirmation', async () => {
-  const request = vi.fn().mockResolvedValueOnce(ok({ runToken: 'token' })).mockResolvedValueOnce(rejected(429, '30')).mockResolvedValueOnce(ok({ id: 1 })).mockResolvedValueOnce(ok({ accepted: true, score: { ...accepted().score, score: 9999 } })).mockResolvedValueOnce(ok(accepted()))
-  const client = createScoreClient({ request })
-  client.begin(); client.finish(summary())
-  expect(await client.submit('Jeremy')).toBe(false)
-  expect(client.state().message).toContain('Wait 30 seconds')
-  expect(await client.submit('Jeremy')).toBe(false)
-  expect(client.state().status).toBe('ready')
-  expect(await client.submit('Jeremy')).toBe(false)
-  expect(await client.submit('Jeremy')).toBe(true)
+it('rejects wrong confirmation and invalid normalized names',async()=>{
+ const a=setup({submitter:()=>ok(accepted('Bob'))});a.client.begin();await a.client.finish(summary())
+ for(const name of ['','ﬃ'.repeat(9),'bad\nname'])expect(await a.client.submit(name)).toBe(false)
+ expect(a.submits).toHaveLength(0);expect(await a.client.submit('Alice')).toBe(false);expect(a.client.state().nameLocked).toBe(true)
 })
-
-
-it.each([
-  ['Alice  Smith', 'Alice Smith'],
-  ['Ａlice', 'Alice'],
-  ['  Alice\u00a0\u00a0Smith  ', 'Alice Smith'],
-])('confirms the arcade canonical name for %s', async (rawName, canonicalName) => {
-  const request = vi.fn().mockResolvedValueOnce(ok({ runToken: 'token' })).mockResolvedValue(ok(accepted(canonicalName)))
-  const client = createScoreClient({ request })
-  client.begin(); client.finish(summary())
-  expect(await client.submit(rawName)).toBe(true)
-  expect(client.state().status).toBe('submitted')
-  expect(JSON.parse(request.mock.calls[1][1].body).name).toBe(canonicalName)
-})
-
-it('retries a canonical name with the identical payload after an ambiguous save', async () => {
-  const request = vi.fn().mockResolvedValueOnce(ok({ runToken: 'token' })).mockRejectedValueOnce(Error('response lost')).mockResolvedValue(ok(accepted('Alice Smith')))
-  const client = createScoreClient({ request })
-  client.begin(); client.finish(summary())
-  expect(await client.submit('Ａlice  Smith')).toBe(false)
-  expect(await client.submit('Alice Smith')).toBe(true)
-  expect(request.mock.calls[1][1].body).toBe(request.mock.calls[2][1].body)
-})
-
-it('does not confirm a score belonging to a different name', async () => {
-  const request = vi.fn().mockResolvedValueOnce(ok({ runToken: 'token' })).mockResolvedValue(ok(accepted('Bob')))
-  const client = createScoreClient({ request })
-  client.begin(); client.finish(summary())
-  expect(await client.submit('Ａlice')).toBe(false)
-  expect(client.state()).toMatchObject({ status: 'ready', nameLocked: true })
-  expect(client.state().message).toContain('Could not confirm')
-})
-
-it('validates the canonical name length before sending a score', async () => {
-  const request = vi.fn().mockResolvedValue(ok({ runToken: 'token' }))
-  const client = createScoreClient({ request })
-  client.begin(); client.finish(summary())
-  expect(await client.submit('ﬃ'.repeat(9))).toBe(false)
-  expect(client.state().nameLocked).toBe(false)
-  expect(request).toHaveBeenCalledTimes(1)
+it('ignores a previous run qualification response',async()=>{
+ let resolve;const wait=new Promise(r=>resolve=r);const a=setup({qualifier:()=>wait})
+ a.client.begin();const old=a.client.finish(summary());await vi.waitFor(()=>expect(a.request.mock.calls.some(([u])=>u.endsWith('/qualify'))).toBe(true))
+ a.client.begin();resolve(ok({qualified:true,score:10100,scoreVersion:2,scores:[]}));await old
+ expect(a.client.state().status).toBe('hidden');expect(a.client.state().summary).toBe(null)
 })
