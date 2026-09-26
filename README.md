@@ -246,3 +246,9 @@ ShoeMoney Arcade repositories follow **`SMA-{game-slug}`**; game URLs follow **`
 ---
 
 **The platform is overrun. Your next run is waiting. [Play Last Engineer](https://arcade.shoemoney.com/last-engineer/).**
+
+### Three.js startup patch
+
+Run `npm ci` with development dependencies before building. The postinstall script applies `patches/three+0.182.0.patch` with `patch-package --error-on-fail` and checks exact source hashes before and after applying it. Unknown versions or changed source fail installation; do not bypass install scripts.
+
+The pinned Three.js patch uses per-builder Sets for node membership while preserving ordered node arrays, hash registration, and update order. It updates both the source NodeBuilder and the active WebGPU bundle. This reduces repeated linear membership scans during shader construction. The side indexes rely on Three’s current append-only builder arrays; direct mutation of those arrays is unsupported by this patch. On a Three.js upgrade, remeasure startup and review the patch and hashes together. The patched Three.js snippets retain their [MIT license](patches/THREE-LICENSE).

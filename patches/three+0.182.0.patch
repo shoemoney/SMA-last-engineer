@@ -1,0 +1,104 @@
+diff --git a/node_modules/three/src/nodes/core/NodeBuilder.js b/node_modules/three/src/nodes/core/NodeBuilder.js
+--- a/node_modules/three/src/nodes/core/NodeBuilder.js
++++ b/node_modules/three/src/nodes/core/NodeBuilder.js
+@@ -138,6 +138,7 @@
+ 		 * @type {Array<Node>}
+ 		 */
+ 		this.nodes = [];
++		this._nodeSet = new Set();
+ 
+ 		/**
+ 		 * A list of all sequential nodes.
+@@ -145,6 +146,7 @@
+ 		 * @type {Array<Node>}
+ 		 */
+ 		this.sequentialNodes = [];
++		this._sequentialNodeSet = new Set();
+ 
+ 		/**
+ 		 * A list of all nodes which {@link Node#update} method should be executed.
+@@ -538,7 +540,7 @@
+ 	 */
+ 	includes( node ) {
+ 
+-		return this.nodes.includes( node );
++		return this._nodeSet.has( node );
+ 
+ 	}
+ 
+@@ -719,9 +721,10 @@
+ 	 */
+ 	addNode( node ) {
+ 
+-		if ( this.nodes.includes( node ) === false ) {
++		if ( this._nodeSet.has( node ) === false ) {
+ 
+ 			this.nodes.push( node );
++			this._nodeSet.add( node );
+ 
+ 			this.setHashNode( node, node.getHash( this ) );
+ 
+@@ -738,9 +741,10 @@
+ 	 */
+ 	addSequentialNode( node ) {
+ 
+-		if ( this.sequentialNodes.includes( node ) === false ) {
++		if ( this._sequentialNodeSet.has( node ) === false ) {
+ 
+ 			this.sequentialNodes.push( node );
++			this._sequentialNodeSet.add( node );
+ 
+ 		}
+ 
+diff --git a/node_modules/three/build/three.webgpu.js b/node_modules/three/build/three.webgpu.js
+--- a/node_modules/three/build/three.webgpu.js
++++ b/node_modules/three/build/three.webgpu.js
+@@ -49395,6 +49395,7 @@
+ 		 * @type {Array<Node>}
+ 		 */
+ 		this.nodes = [];
++		this._nodeSet = new Set();
+ 
+ 		/**
+ 		 * A list of all sequential nodes.
+@@ -49402,6 +49403,7 @@
+ 		 * @type {Array<Node>}
+ 		 */
+ 		this.sequentialNodes = [];
++		this._sequentialNodeSet = new Set();
+ 
+ 		/**
+ 		 * A list of all nodes which {@link Node#update} method should be executed.
+@@ -49795,7 +49797,7 @@
+ 	 */
+ 	includes( node ) {
+ 
+-		return this.nodes.includes( node );
++		return this._nodeSet.has( node );
+ 
+ 	}
+ 
+@@ -49976,9 +49978,10 @@
+ 	 */
+ 	addNode( node ) {
+ 
+-		if ( this.nodes.includes( node ) === false ) {
++		if ( this._nodeSet.has( node ) === false ) {
+ 
+ 			this.nodes.push( node );
++			this._nodeSet.add( node );
+ 
+ 			this.setHashNode( node, node.getHash( this ) );
+ 
+@@ -49995,9 +49998,10 @@
+ 	 */
+ 	addSequentialNode( node ) {
+ 
+-		if ( this.sequentialNodes.includes( node ) === false ) {
++		if ( this._sequentialNodeSet.has( node ) === false ) {
+ 
+ 			this.sequentialNodes.push( node );
++			this._sequentialNodeSet.add( node );
+ 
+ 		}
+ 
