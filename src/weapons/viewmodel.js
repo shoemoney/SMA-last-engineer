@@ -14,30 +14,9 @@
  *
  * All geometry is authored in centimetres, matching the rest of the world.
  *
- * --- round two -----------------------------------------------------------------------
- * A critic measured the bottom-right box (900,470)-(1280,720) at mean luminance 8.8 with
- * 96.1% of its pixels under luminance 20 — "a featureless black wedge" that occluded two of
- * the three zombies on the right. Three separate faults stacked into that one number, and
- * this module owns all three:
- *
- *   FRAMING. pistol.js / rifle.js / shotgun.js hold each gun almost square to the lens, which
- *     points the BUTT of the weapon at the camera. A butt-on gun is a rectangle — no length,
- *     no taper, nothing to read — and it subtends an enormous solid angle because that end is
- *     16 cm from the eye. FRAMING below replaces `hold` and adds a per-weapon shrink, so each
- *     gun is turned across the view and read along its flank: a diagonal with air around it.
- *
- *   VALUE. Dark base colours at metalness 0.72-0.85 have almost no diffuse term, and this
- *     station's environment map is deliberately near-black, so the specular half had nothing
- *     to reflect either. Lit by nothing, reflecting nothing. MATERIALS is rebuilt around a
- *     real diffuse lobe, with a new `edge` for chamfers, and every body material carries a
- *     small emissive floor so no part of the gun can return to zero.
- *
- *   HANDS. There were hands, technically — a box palm and four box fingers, the same value as
- *     the gun and the tunnel behind it. Rebuilt as a gloved fist with a knuckle plate,
- *     two-segment wrapping fingers, an opposed thumb and a strapped cuff, in a grip frame
- *     authored per hand so the fingers CLOSE on the grip instead of floating beside it.
  */
 import * as THREE from 'three/webgpu'
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js'
 import { PLAYER, WEAPONS } from '../game/rules.js'
 import { Rng, rng as sharedRng } from '../core/rng.js'
 import { PISTOL_VIEW } from './pistol.js'
@@ -198,15 +177,10 @@ const VIEW = Object.freeze({
   hand: Object.freeze({
     palm: Object.freeze({ size: [5.2, 7.6, 4.6], pos: [0.5, -1.0, 0.6] }),
     back: Object.freeze({ size: [1.0, 6.4, 4.4], pos: [-2.6, -0.8, 0.4] }),
-    knuckleBar: Object.freeze({ size: [1.3, 1.1, 5.2], pos: [-2.6, 2.6, -0.5] }),
     fingerCount: 4,
     fingerTopY: 2.1,
-    fingerPitchY: -2.5, // a wider pitch than the finger is tall, so the gaps survive downsampling
+    fingerPitchY: -2.15,
     fingerCurl: 0.10, // radians of extra close per finger down the fist, so it is not a stamp
-    // Round four closed these up. At 1.65 against a 2.5 pitch every finger had 0.85 cm of
-    // AIR under it — about eight screen pixels of lit station showing between them — and a
-    // render of four separated slabs is a comb, not a fist. 2.0 leaves a 0.5 cm seam, which
-    // still survives downsampling as a dark line but never as a gap you can see through.
     proximal: Object.freeze({ size: [6.4, 2.0, 2.3], pos: [0.1, 0, -2.8] }),
     distal: Object.freeze({ size: [2.7, 1.95, 3.1], pos: [-3.2, 0, -1.4] }),
     knuckle: Object.freeze({ size: [2.1, 2.05, 2.2], pos: [-3.2, 0, -2.7] }),
@@ -248,69 +222,7 @@ const VIEW = Object.freeze({
   dualWieldNudgeX: -2.0, // cm of extra outward shift on the mirrored left-hand pistol
 })
 
-/**
- * The weapon is on screen every frame and it is the largest thing the player ever looks at,
- * so it is the one surface in the game that is never allowed to fall out of the value range.
- *
- * It did. Round one paired lifted-but-still-dark colours with metalness 0.72-0.85, and those
- * two choices multiply into nothing: a surface at metalness m keeps only (1 - m) of its
- * colour as diffuse, and the other m is specular that this station's near-black environment
- * map never pays back. At 0.72 the rifle body was showing 28% of an already dark grey.
- *
- * So metalness comes down to 0.25-0.55 and the colours come up roughly 1.4x, which together
- * hand every panel a diffuse lobe the three view lights and the station's sodium lamps can
- * actually land on. The SPREAD is what keeps it from reading as plastic: `rubber` and `dark`
- * stay pinned near the floor on purpose, because the charging handle, the trigger guard and
- * the grip panels are the shadow line that makes the bright rails read as rails.
- *
- * `edge` is new and is most of why the silhouette separates at all — a near-white,
- * low-roughness metal used only on chamfers, rail tops and port rims, so the eye gets a
- * contour to follow instead of one undifferentiated mass at 60 px across.
- *
- * --- round three ---------------------------------------------------------------------
- * Round two cleared the black wedge and overshot into a pale one. Measured in the same box
- * the round-one critic used, (900,470)-(1280,720): round one was mean luminance 8.8 with
- * 96.1% of pixels under 20; round two came back at 84.0 with only 1.1% under 20 — but the
- * receiver, the handguard, the rail and the scope body all landed inside one narrow lavender
- * band, so the gun had no dark left anywhere and read as a single flat mass. Three lights
- * from three directions at those intensities fill every face of a box rig; the `fill` in
- * particular exists to soften the terminator and at 700 it erased it.
- *
- * So the FILL comes down hard (700 -> 260), the key eases off (3600 -> 2150), and the body
- * colours come back down about 20% while `edge` is left exactly where it was. That last part
- * is the whole point: the chamfers did not get brighter, everything around them got darker,
- * which is the only way a contour reads. `polymer` follows the body down so the grip panels
- * stay the shadow line.
- *
- * The hands were the worst of it. `skin` at 0x76492c under a 3600 cd key came out salmon
- * pink, so the bare wrist read as a raw sausage the width of the forend, and `gloveHi` and
- * `strap` at their old values read as pale wooden blocks stacked beside the gun rather than
- * fingers closed on it. All three drop into leather range, and the sleeve grows over most of
- * what is left (sleeveLengthFraction 0.62 -> 0.70, forearmLengthFraction 0.14 -> 0.08) so the
- * bare wrist is a cuff's width behind the glove instead of a tube across the bottom of the
- * frame. Re-measured in the same box: firefight 84.0 -> 79.1 mean with 0.7% under 20, so the
- * value came down where it was flat without going anywhere near the wedge it started as.
- *
- * Every body material also carries a small emissive floor, roughly 10-15% of its lit value.
- * It is not there to light the gun; it is there so the gun cannot reach zero. The old rig
- * went fully black whenever the player faced away from a lamp, and a black shape in the
- * corner of every frame is precisely what "featureless wedge" means.
- *
- * --- round four ---------------------------------------------------------------------
- * Round three got the VALUES right and shipped them as flats. Measured in firefight.png:
- * the receiver face is mean rgb(157,140,139) at Lsd 11, and that 11 is entirely the
- * chamfer strips — a third of every 12x12 patch inside the weapon silhouette comes back
- * under Lsd 6, and the gloved hand at (720,650)-(760,680) measures Lsd 4.0, which is the
- * post grain and nothing else. At 3x zoom it is a stack of grey boxes with a flat blue
- * circle for an optic. That is the Unreal sentence, verbatim, on the one object that is
- * on screen in every frame of play.
- *
- * So every entry below now names a baked SURFACE, and the maps multiply into the scalars
- * rather than replacing them. Nothing in this table changed value: `surface` is the only
- * new key on the materials that already existed. The sights and the optic lens are the
- * deliberate exceptions — a sight dot is the one instant-read tell the game has and
- * grinding tool marks into it would dull the only thing it is for.
- */
+/** Diffuse floors keep the rig legible under station light without flattening metal highlights. */
 const MATERIALS = Object.freeze({
   steel: { color: 0x51575f, metalness: 0.46, roughness: 0.32, emissive: 0x111419, emissiveIntensity: 1.0, surface: 'gun' },
   slide: { color: 0x5b6270, metalness: 0.52, roughness: 0.24, emissive: 0x15181e, emissiveIntensity: 1.0, surface: 'gun' },
@@ -326,37 +238,14 @@ const MATERIALS = Object.freeze({
   sightGreen: { color: 0x0b1a0d, metalness: 0.0, roughness: 0.4, emissive: 0x39ff6a, emissiveIntensity: 3.5 },
   sightRed: { color: 0x1a0606, metalness: 0.0, roughness: 0.4, emissive: 0xff2a18, emissiveIntensity: 4.0 },
   sightAmber: { color: 0x1a1206, metalness: 0.0, roughness: 0.4, emissive: 0xffb020, emissiveIntensity: 3.0 },
-  // The glove is deliberately the DARKEST thing in the rig and the knuckle plate one of the
-  // brightest. A first attempt gave the glove roughly the same value as `steel`, and a fist
-  // the same value as the gun it is holding is not a fist, it is a lump on the barrel. The
-  // separation, not the absolute value, is what makes a hand read at forty pixels.
-  // The glove separates from the gun by HUE as well as by value. Grey-on-grey was the first
-  // mistake and dark-grey-on-grey was the second: at forty pixels a cool dark grey beside a
-  // cool mid grey is one object. This is a warm near-black leather with a tan knuckle plate,
-  // so the fist reads against a blue-grey receiver even where the values happen to meet.
-  glove: { color: 0x241f1b, metalness: 0.06, roughness: 0.78, emissive: 0x090706, emissiveIntensity: 1.0, surface: 'hide' },
-  gloveHi: { color: 0x685e4c, metalness: 0.18, roughness: 0.50, emissive: 0x1b1712, emissiveIntensity: 1.0, surface: 'hide' },
-  // Two new rungs, and they are the fix for the second finding rather than a retune of the
-  // first two. A critic measured all four hand parts inside a 12-luminance band in boss.png
-  // — cuff L=60.3, palm L=62.4, upper finger L=67.7, lower finger L=72.8 — against a table
-  // that spreads glove and gloveHi 3:1. Nothing in the view rig occludes anything: all three
-  // view lights are shadowless and every viewmodel mesh has castShadow and receiveShadow
-  // off, so a fist built from boxes is lit from three directions with no self-shadow and
-  // renders as ONE patch however far apart its albedos are.
-  //
-  // A sixth shadow-casting light is not available to pay for it. lighting.js documents a
-  // hard WebGPU budget — 16 sampled textures per fragment stage, ~2 bindings per casting
-  // light, four ceiling spots already spending eight, and a material that trips the limit
-  // does not warn, it fails to compile and the station renders invisible. That is the exact
-  // black screen this whole rebuild exists to avoid, so the occlusion is PAINTED instead:
-  // the parts of the fist that a real shadow would bury get their own darker rungs, and the
-  // fingers step down the ladder as they go deeper into the grip. Same result on screen,
-  // zero bindings, and the station's rig is not touched.
-  gloveDeep: { color: 0x14110f, metalness: 0.05, roughness: 0.84, emissive: 0x040303, emissiveIntensity: 1.0, surface: 'hide' },
-  gloveMid: { color: 0x453e31, metalness: 0.15, roughness: 0.56, emissive: 0x120f0b, emissiveIntensity: 1.0, surface: 'hide' },
+  // Matte charcoal leather separates the rounded hand from the sharper reflective receiver.
+  glove: { color: 0x252d36, metalness: 0.0, roughness: 0.88, emissive: 0x05080b, emissiveIntensity: 1.0, surface: 'hide' },
+  gloveHi: { color: 0x55616d, metalness: 0.0, roughness: 0.88, emissive: 0x10161b, emissiveIntensity: 1.0, surface: 'hide' },
+  gloveDeep: { color: 0x171e26, metalness: 0.0, roughness: 0.88, emissive: 0x030508, emissiveIntensity: 1.0, surface: 'hide' },
+  gloveMid: { color: 0x394550, metalness: 0.0, roughness: 0.88, emissive: 0x080d12, emissiveIntensity: 1.0, surface: 'hide' },
   skin: { color: 0x36230f, metalness: 0.0, roughness: 0.80, emissive: 0x110a06, emissiveIntensity: 1.0, surface: 'limb' },
   sleeve: { color: 0x2f342a, metalness: 0.0, roughness: 0.86, emissive: 0x0b0d09, emissiveIntensity: 1.0, surface: 'limb' },
-  strap: { color: 0x4d3f20, metalness: 0.15, roughness: 0.62, emissive: 0x100d06, emissiveIntensity: 1.0, surface: 'hide' },
+  strap: { color: 0x303b45, metalness: 0.0, roughness: 0.88, emissive: 0x070b10, emissiveIntensity: 1.0, surface: 'hide' },
 })
 
 // ---------------------------------------------------------------------------
@@ -378,8 +267,7 @@ const MATERIALS = Object.freeze({
  * a fist the gunmetal metalness map would make it as conductive as the receiver it is
  * wrapped around.
  *
- * Both sets MULTIPLY the scalars in MATERIALS. Those scalars are three rounds of measured
- * value work and none of them moved. bakeSurface normalises each ORM channel to its own
+ * Both sets multiply the scalars in MATERIALS. bakeSurface normalises each ORM channel to its own
  * maximum, so a scalar stays the roughest / most metallic that surface ever gets and the
  * map only varies downward from it; the albedo is authored just under 1.0 for the same
  * reason — it is carrying grime and tool marks, not a mud filter over tuned work.
@@ -420,18 +308,11 @@ const MARK_ASPECT = 3.8
  * wraps its ~27 cm circumference and v runs the 40-odd cm to the shoulder, so the box
  * repeat would smear the grain into stripes along the forearm.
  *
- * `hide` is the number that had to be MEASURED rather than reasoned about. The first pass
- * set it to 1.7 by the same nine-centimetres logic as the gun, and in the render the fist
- * came back perfectly flat while the forearm beside it showed real leather. The reason is
- * that a finger segment is 3 cm across and about 30 screen pixels wide: at 1.7 repeats that
- * is 870 texels crushed into 30 pixels, the sampler drops to the smallest mip it has, and
- * every grain in the bake averages to one tone. A texture too FINE for the object is
- * indistinguishable from no texture at all. 0.45 puts roughly one tile across the whole
- * hand — an 11 cm grain — which is the scale that actually survives to the screen.
+ * Glove pores stay subtle; the rounded silhouette and sewn panels carry the hand read.
  */
 const SURFACES = Object.freeze({
   gun: Object.freeze({ bake: 'gun', repeat: [2.6, 2.6], orm: 'both', normalScale: 0.85 }),
-  hide: Object.freeze({ bake: 'hide', repeat: [0.45, 0.45], orm: 'rough', normalScale: 1.15 }),
+  hide: Object.freeze({ bake: 'hide', repeat: [1, 1], orm: 'rough', normalScale: 0.42 }),
   limb: Object.freeze({ bake: 'hide', repeat: [4.6, 6.2], orm: 'rough', normalScale: 0.85 }),
   // Drawn artwork, not noise: one tile per face, exactly once, no tiling.
   optic: Object.freeze({ bake: 'optic', repeat: [1, 1], orm: 'both', normalScale: 0.40, emissive: true }),
@@ -637,36 +518,19 @@ function bakeGunmetal() {
   }, 3.8)
 }
 
-/**
- * Worn glove leather and the canvas of a sleeve, off one bake: pebbled grain, fold lines
- * stretched along one axis because a hand creases where it closes, and scuffed high spots
- * across the knuckles. The creases carry real depth in the height field — under three
- * point lights 20 cm off the lens, per-pixel relief is the only self-shadowing this rig is
- * allowed to have.
- */
+/** Matte pebbled leather. Isotropic pores avoid the long grain of a wooden surface. */
 function bakeHide() {
-  // Cell counts are set against the 0.45 repeat above, not against the tile: at roughly one
-  // tile per hand, 16 cells is a 7 mm grain and 5 creases is a fold every 2 cm. Authored
-  // any finer and the sampler averages the whole thing away before it reaches a pixel.
-  // The stretch on the creases started at 2.6 and had to come down. Long parallel streaks
-  // on a warm tan box do not read as leather, they read as WOOD — the render came back with
-  // a fist that looked like a stack of planks, which is the one thing worse than a fist that
-  // looks like nothing. At 1.35 the folds are still directional enough to say "this closed
-  // around something" without lining up into grain, and the pebble carries more of the
-  // albedo so the surface is blotchy rather than striped.
   const rng = new Rng(HIDE_SEED)
-  const pebble = wrapFbm(rng, 16, 3)
-  const crease = streakFbm(rng, 5, 3, 1.35)
-  const scuff = wrapFbm(rng, 4, 4)
+  const pebble = wrapFbm(rng, 36, 3)
+  const wear = wrapFbm(rng, 7, 3)
   return bakeSurface((u, v, out) => {
-    const p = pebble(u, v)
-    const fold = smoothEdge(0.58, 0.30, crease(u, v))
-    const worn = smoothEdge(0.70, 0.96, scuff(u, v))
-    out.r = out.g = out.b = clamp01(1.0 - 0.11 * fold - 0.11 * (1 - p) + 0.06 * worn)
-    out.rough = clamp01(0.99 - 0.26 * worn + 0.01 * fold)
+    const pore = pebble(u, v)
+    const scuff = wear(u, v)
+    out.r = out.g = out.b = 0.90 + 0.06 * pore + 0.04 * scuff
+    out.rough = 0.92 + 0.08 * pore
     out.metal = 0
-    out.height = clamp01(0.5 + (p - 0.5) * 0.70 - fold * 0.34 + worn * 0.12)
-  }, 4.2)
+    out.height = 0.5 + (pore - 0.5) * 0.25
+  }, 1.4)
 }
 
 /**
@@ -989,6 +853,7 @@ export class ViewModel {
 
     this.geometries = {
       box: new THREE.BoxGeometry(1, 1, 1),
+      glove: new RoundedBoxGeometry(1, 1, 1, 2, 0.24),
       cyl: new THREE.CylinderGeometry(0.5, 0.5, 1, 18, 1),
       sphere: new THREE.SphereGeometry(0.5, 14, 10),
       torus: new THREE.TorusGeometry(0.5, 0.09, 8, 24),
@@ -1025,7 +890,7 @@ export class ViewModel {
         mat.emissive = new THREE.Color(spec.emissive)
         mat.emissiveIntensity = spec.emissiveIntensity
       }
-      // The maps multiply into the scalars above, which do not move. `orm: 'rough'` is the
+      // The maps multiply into the material scalars above. `orm: 'rough'` is the
       // whole reason the hands get their own entry: leather takes the roughness variation
       // and NOT the metalness, because a glove wearing the gunmetal conductor map is a
       // steel mitten, and a steel mitten on a steel receiver is one object again.
@@ -1252,13 +1117,7 @@ export class ViewModel {
     this.buildHand(hand)
   }
 
-  /**
-   * The gloved fist, in grip space: +Y up the grip, -Z the front strap, +X outboard. Fingers
-   * are two segments each — a proximal that crosses the front of the grip and a distal that
-   * curls back around the far side — because one box per finger reads as a plank, and four
-   * planks read as a comb. The knuckle spheres and the back plate wear the brighter glove
-   * material, which is what separates the hand from the dark grip it is wrapped around.
-   */
+  /** Rounded pads share the existing grip frame and follow the weapon's recoil and reload. */
   buildHand(group) {
     const H = VIEW.hand
     const add = (shape, mat, size, pos, rot) => {
@@ -1272,44 +1131,24 @@ export class ViewModel {
       group.add(mesh)
     }
 
-    // Value assignment is the whole trick, and the first attempt had it exactly backwards.
-    // The camera sees the BACK of this hand, and the back was `gloveHi` — brighter than the
-    // receiver behind it — so the fist rendered as one more pale grey slab bolted to a pale
-    // grey gun, and the arm appeared to end in nothing. The back of the hand is now the
-    // darkest material in the rig, and only the knuckle plate and the wrist strap are light.
-    // A dark silhouette with four bumps on its leading edge reads as a fist at forty pixels;
-    // a light-grey box of the same shape reads as part of the gun.
-    // Round four widened this ladder from two rungs to four, because two was not enough to
-    // survive the rig. Measured in boss.png the whole fist arrived inside twelve luminance
-    // points — palm 62.4, finger slabs 67.7 and 72.8 — off materials that are three to one
-    // apart on paper. Three shadowless lights from three directions fill every face of a
-    // box, so the only occlusion this fist is ever going to have is the occlusion painted
-    // into its materials. The mass of the hand drops to the new floor and the fingers step
-    // DOWN it as they go deeper into the grip, which is the direction a key light 25 cm
-    // above the lens would have darkened them anyway.
-    add('box', 'gloveDeep', H.palm.size, H.palm.pos)
-    add('box', 'gloveDeep', H.back.size, H.back.pos)
-    add('box', 'gloveHi', H.knuckleBar.size, H.knuckleBar.pos)
-
-    // A debug pass with the hand flat-shaded in magenta proved it was rendering, on the grip,
-    // at about 110x95 px — and still unreadable, because a dark mass of ten overlapping boxes
-    // is a mass. What makes it a HAND is the scalloped leading edge, so the four distal
-    // segments and the thumb tip carry the light material and everything behind them stays
-    // dark. Four bright bumps in a row off a dark blob is a fist; the same blob without them
-    // is a lump.
+    add('glove', 'glove', H.palm.size, H.palm.pos)
+    add('glove', 'gloveDeep', H.back.size, H.back.pos)
     for (let i = 0; i < H.fingerCount; i++) {
       const y = H.fingerTopY + i * H.fingerPitchY
       const curl = H.fingerCurl * i
-      const deep = i >= 2
-      add('box', deep ? 'gloveDeep' : 'glove', H.proximal.size, [H.proximal.pos[0], y, H.proximal.pos[2]], [curl, 0, 0])
-      add('box', deep ? 'gloveMid' : 'gloveHi', H.distal.size, [H.distal.pos[0], y, H.distal.pos[2] + curl * 2.2], [curl * 1.6, 0, 0])
-      add('sphere', deep ? 'gloveDeep' : 'glove', H.knuckle.size, [H.knuckle.pos[0], y, H.knuckle.pos[2]])
+      const taper = [1, 1, 0.94, 0.82][i]
+      const scaled = (size) => [size[0] * taper, size[1], size[2] * taper]
+      add('glove', 'glove', scaled(H.proximal.size), [H.proximal.pos[0], y, H.proximal.pos[2]], [curl, 0, 0])
+      add('glove', 'gloveMid', scaled(H.distal.size), [H.distal.pos[0], y, H.distal.pos[2] + curl * 2.2], [curl * 1.6, 0, 0])
+      add('sphere', 'gloveHi', scaled([2.15, 1.7, 2.2]), [H.knuckle.pos[0] - 0.15, y, H.knuckle.pos[2]])
     }
 
-    add('box', 'glove', H.thumbBase.size, H.thumbBase.pos, H.thumbBase.rot)
-    add('box', 'gloveMid', H.thumbTip.size, H.thumbTip.pos, H.thumbTip.rot)
-    add('box', 'strap', H.strap.size, H.strap.pos)
-    add('box', 'gloveHi', H.strapEdge.size, H.strapEdge.pos)
+    add('glove', 'gloveMid', H.thumbBase.size, H.thumbBase.pos, H.thumbBase.rot)
+    add('glove', 'gloveHi', H.thumbTip.size, H.thumbTip.pos, H.thumbTip.rot)
+    add('glove', 'strap', H.strap.size, H.strap.pos)
+    add('glove', 'gloveDeep', H.strapEdge.size, H.strapEdge.pos)
+    add('glove', 'gloveHi', [0.18, 0.25, 3.9], [-3.18, -4.9, 0.6])
+    add('glove', 'gloveMid', [0.28, 1.2, 2.2], [-3.2, -5.55, 0.6])
   }
 
   /**

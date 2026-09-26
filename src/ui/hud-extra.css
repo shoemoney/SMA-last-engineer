@@ -28,7 +28,7 @@
 
 .bossbar {
   position: absolute;
-  top: 2.4%;
+  top: 100px;
   left: 50%;
   width: min(50vw, 680px);
   transform: translateX(-50%);
@@ -44,7 +44,7 @@
 .bossbar::before {
   content: '';
   position: absolute;
-  inset: -22px -30% -30px;
+  inset: -10px -18px -14px;
   background:
     linear-gradient(180deg, rgba(3, 5, 9, .9) 0%, rgba(3, 5, 9, .66) 58%, rgba(3, 5, 9, 0) 100%),
     radial-gradient(ellipse 46% 130% at 50% 30%, rgba(var(--boss-rgb), .22), rgba(4, 6, 10, 0) 72%);

@@ -835,3 +835,59 @@ kbd {
 .arcade-score p { margin: 0; color: var(--bone); }
 .arcade-score .btn { margin: 0; }
 .arcade-score :disabled { cursor: default; opacity: .7; }
+
+/* Separate the debrief from its optional submission without shrinking type. */
+.screen--over .screen__inner {
+  width: min(940px, 100%);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas: "title title" "epitaph epitaph" "stats score" "record score" "retry menu";
+  gap: 20px 28px;
+  padding: 28px;
+  align-items: center;
+}
+.screen--over .title--dead { grid-area: title; font-size: clamp(46px, 7vw, 88px); }
+.screen--over .over__epitaph { grid-area: epitaph; margin: 0 0 8px; letter-spacing: .12em; }
+.screen--over .runstats { grid-area: stats; margin: 0; gap: 18px 12px; }
+.screen--over .stat__label { color: #aac0d0; letter-spacing: .04em; }
+.screen--over .arcade-score {
+  grid-area: score; margin: 0; padding: 22px;
+  background: rgba(5, 13, 22, .9);
+  border: 1px solid #486476; border-top: 3px solid #8dc8e4;
+}
+.screen--over .over__record { grid-area: record; margin: 0; padding: 14px; }
+.screen--over .over__record-kicker { letter-spacing: .12em; }
+.screen--over #btn-retry { grid-area: retry; }
+.screen--over #btn-menu { grid-area: menu; }
+.screen--over #btn-retry, .screen--over #btn-menu {
+  width: 100%; margin: 0; min-height: 58px; padding: 14px 10px;
+  font-size: 20px; letter-spacing: .06em;
+}
+.portrait {
+  padding: 4px;
+  background: #18242d;
+  border: 1px solid #91a4b0;
+  box-shadow: 0 3px 14px #000, inset 0 0 0 3px #111820;
+}
+.portrait img { filter: saturate(.48) contrast(1.15); }
+.portrait__frame { inset: 4px; border-width: 2px; }
+.portrait::after {
+  content: ''; position: absolute; inset: 5px; pointer-events: none;
+  background: repeating-linear-gradient(0deg, transparent 0 3px, rgba(6, 24, 32, .2) 3px 4px);
+  box-shadow: inset 0 0 16px rgba(15, 43, 56, .6);
+}
+@media (max-width: 700px) {
+  .screen--over .screen__inner {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "title" "epitaph" "stats" "record" "retry" "menu" "score";
+    padding: 22px 18px; gap: 16px;
+  }
+  .screen--over .runstats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .screen--over .arcade-score { padding: 16px; }
+  .screen--over .over__record { grid-template-columns: 1fr auto; text-align: left; gap: 6px 10px; }
+  .screen--over .over__record-val { grid-column: 2; grid-row: 1 / 3; align-self: center; }
+  .screen--over .over__record-sub { grid-column: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .portrait.critical, .over__record.is-record, .screen--over::before { animation: none; }
+}

@@ -141,10 +141,10 @@ const SHAPES = Object.freeze({
 /** Surface response. The original gave every zombie the default lit material, which is most of
  *  why the build read as grey boxes; damp flesh under a sodium lamp needs a low-ish roughness. */
 const SURFACE = Object.freeze({
-  fleshRoughness: 0.62,
-  fleshMetalness: 0.22,
-  plateRoughness: 0.38,
-  plateMetalness: 0.62,
+  fleshRoughness: 0.76,
+  fleshMetalness: 0.04,
+  plateRoughness: 0.56,
+  plateMetalness: 0.40,
   plateDarken: 0.42,
   // --- Albedo floors ------------------------------------------------------------------------
   //
@@ -591,6 +591,7 @@ function bakeFlesh() {
   const albedoCtx = albedoCanvas.getContext('2d')
   const ormCtx = ormCanvas.getContext('2d')
   const albedo = albedoCtx.createImageData(size, size)
+  const encodedAlbedo = new THREE.Color()
   const orm = ormCtx.createImageData(size, size)
   const height = new Float32Array(size * size)
 
@@ -619,16 +620,8 @@ function bakeFlesh() {
       const run = smoothEdge(0.50, 0.82, runField(u, v / 8)) * (0.25 + 0.75 * rot)
       const pore = 0.88 + 0.26 * poreField(u, v)
 
-      // Dead skin is DARK, and this is the measurement the second pass turned on. The first
-      // bake started at 0.84 and peaked past 1.0, which is a near-white diffuse albedo — under
-      // the station's sodium lamps that came back at luminance 75-165 against brick at 51-60,
-      // so every body in the frame was brighter than the room it was standing in. That is not
-      // a lighting problem and no amount of silhouette work survives it: a figure brighter
-      // than its background reads as painted plastic, full stop.
-      //
-      // 0.34-0.56 is roughly the diffuse albedo of actual skin that has stopped being
-      // perfused. It puts a body AT or just under the wall behind it and hands the job of
-      // separating the two to the rim, where it belongs.
+      // Linear reflectance modulation retains pores and rot beneath the archetype tint.
+      // Encoding these values as sRGB below avoids decoding and darkening them twice.
       let cr = (0.38 + 0.20 * s) * pore
       let cg = (0.34 + 0.17 * s) * pore
       let cb = (0.27 + 0.14 * s) * pore
@@ -639,9 +632,11 @@ function bakeFlesh() {
 
       const p = y * size + x
       const i = p * 4
-      albedo.data[i] = clamp01(cr) * 255
-      albedo.data[i + 1] = clamp01(cg) * 255
-      albedo.data[i + 2] = clamp01(cb) * 255
+      // Reflectance is linear; the color texture is decoded from sRGB by the renderer.
+      encodedAlbedo.setRGB(clamp01(cr), clamp01(cg), clamp01(cb), THREE.LinearSRGBColorSpace).convertLinearToSRGB()
+      albedo.data[i] = encodedAlbedo.r * 255
+      albedo.data[i + 1] = encodedAlbedo.g * 255
+      albedo.data[i + 2] = encodedAlbedo.b * 255
       albedo.data[i + 3] = 255
 
       const wet = Math.max(rot * 0.65, run)
@@ -1792,10 +1787,10 @@ export class Zombie {
     else this._tickMelee(dt, world, player)
   }
 
-  /** §3.2. No attack cone, no facing check, no line of sight — being inside the sphere is enough. */
+  /** Melee contact requires reach and an unobstructed segment between capsule centers. */
   _tickMelee(dt, world, player) {
     const distance = this.position.distanceTo(player.position)
-    if (distance <= this.attackRange) {
+    if (distance <= this.attackRange && (!world.hasLineOfSight || world.hasLineOfSight(this.position, player.position))) {
       this._stopMovement()
       this.state = 'attack'
       this._startTelegraph(distance, dt)

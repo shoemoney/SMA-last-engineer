@@ -28,6 +28,7 @@ Fight through an overrun subway in a browser survival shooter built with Three.j
 | Feature | What it brings to a run |
 | :--- | :--- |
 | Subway survival | Wave combat, station traversal, pickups, and the Conductor boss |
+| Solid cover | Walls and columns block melee damage, including cover reached during a swing |
 | Three weapons | Pistol, rifle, and shotgun with weapon mods and distinct handling |
 | Weapon mods | Silencer, armor piercing, incendiary rounds, and laser sight; explosive rounds are removed |
 | Wave supplies | At most one health heart and one armor chestplate per wave, at random vacant platform locations; old supplies are replaced and never respawn on a timer |

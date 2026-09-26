@@ -68,7 +68,7 @@ export function createScoreClient({ request = globalThis.fetch, onChange = () =>
     async submit(rawName) {
       const current = run
       if (!current?.summary || current.status === 'submitting' || current.status === 'submitted' || current.status === 'terminal') return false
-      const name = String(rawName ?? '').normalize('NFC').trim()
+      const name = String(rawName ?? '').normalize('NFKC').trim().replace(/ +/g, ' ')
       if (current.attempt && name !== current.attempt.name) {
         current.message = 'This submission may already be saved. Retry with the original name, or start a new run.'
         publish()

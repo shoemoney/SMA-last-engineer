@@ -120,3 +120,44 @@ it('reports a useful wait on rate limiting and accepts only explicit valid confi
   expect(await client.submit('Jeremy')).toBe(false)
   expect(await client.submit('Jeremy')).toBe(true)
 })
+
+
+it.each([
+  ['Alice  Smith', 'Alice Smith'],
+  ['Ａlice', 'Alice'],
+  ['  Alice\u00a0\u00a0Smith  ', 'Alice Smith'],
+])('confirms the arcade canonical name for %s', async (rawName, canonicalName) => {
+  const request = vi.fn().mockResolvedValueOnce(ok({ runToken: 'token' })).mockResolvedValue(ok(accepted(canonicalName)))
+  const client = createScoreClient({ request })
+  client.begin(); client.finish(summary())
+  expect(await client.submit(rawName)).toBe(true)
+  expect(client.state().status).toBe('submitted')
+  expect(JSON.parse(request.mock.calls[1][1].body).name).toBe(canonicalName)
+})
+
+it('retries a canonical name with the identical payload after an ambiguous save', async () => {
+  const request = vi.fn().mockResolvedValueOnce(ok({ runToken: 'token' })).mockRejectedValueOnce(Error('response lost')).mockResolvedValue(ok(accepted('Alice Smith')))
+  const client = createScoreClient({ request })
+  client.begin(); client.finish(summary())
+  expect(await client.submit('Ａlice  Smith')).toBe(false)
+  expect(await client.submit('Alice Smith')).toBe(true)
+  expect(request.mock.calls[1][1].body).toBe(request.mock.calls[2][1].body)
+})
+
+it('does not confirm a score belonging to a different name', async () => {
+  const request = vi.fn().mockResolvedValueOnce(ok({ runToken: 'token' })).mockResolvedValue(ok(accepted('Bob')))
+  const client = createScoreClient({ request })
+  client.begin(); client.finish(summary())
+  expect(await client.submit('Ａlice')).toBe(false)
+  expect(client.state()).toMatchObject({ status: 'ready', nameLocked: true })
+  expect(client.state().message).toContain('Could not confirm')
+})
+
+it('validates the canonical name length before sending a score', async () => {
+  const request = vi.fn().mockResolvedValue(ok({ runToken: 'token' }))
+  const client = createScoreClient({ request })
+  client.begin(); client.finish(summary())
+  expect(await client.submit('ﬃ'.repeat(9))).toBe(false)
+  expect(client.state().nameLocked).toBe(false)
+  expect(request).toHaveBeenCalledTimes(1)
+})

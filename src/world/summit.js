@@ -521,8 +521,7 @@ function finish(canvas, { repeat = true } = {}) {
 }
 
 /**
- * A block of city, as one tiling facade: dark masonry with windows in it, about a third of
- * them lit. It is the only texture the skyline gets, and it is deliberately the only one —
+ * A shared facade with grouped office bays and dark service floors. It is the only texture the skyline gets, and it is deliberately the only one —
  * twenty-two buildings sharing one material is twenty-two boxes and one draw call, which is
  * the entire budget a background is allowed to cost.
  */
@@ -533,8 +532,8 @@ function bakeFacade(size = 256) {
   ctx.fillStyle = '#0a0b11'
   ctx.fillRect(0, 0, size, size)
 
-  const cols = 8
-  const rows = 8
+  const cols = 12
+  const rows = 12
   const cell = size / cols
   // A fixed integer hash, not Math.random: the skyline has to be the same building every
   // boot or two captures of the same frame stop being comparable.
@@ -545,14 +544,14 @@ function bakeFacade(size = 256) {
       const roll = lit(i, j)
       const x = i * cell + cell * 0.28
       const y = j * cell + cell * 0.22
-      const w = cell * 0.44
+      const w = cell * (i % 4 === 0 ? 0.18 : 0.62)
       const h = cell * 0.5
-      if (roll < 34) {
+      if (j % 5 !== 0 && i % 4 !== 0 && roll < 28) {
         const warm = roll % 3
         ctx.fillStyle = warm === 0 ? '#ffd9a0' : warm === 1 ? '#cfe2ff' : '#fff2cf'
-        ctx.globalAlpha = 0.55 + (roll % 7) * 0.06
+        ctx.globalAlpha = 0.35 + (roll % 7) * 0.055
       } else {
-        ctx.fillStyle = '#141824'
+        ctx.fillStyle = j % 5 === 0 ? '#131c27' : '#0e1520'
         ctx.globalAlpha = 1
       }
       ctx.fillRect(x, y, w, h)
@@ -657,7 +656,7 @@ export function buildSummit(scene, station) {
     stripe: new Batch(220.0),
     furniture: new Batch(160.0),
     asphalt: new Batch(500.0),
-    city: new Batch(320.0),
+    city: new Batch(760.0),
     /** The lamp lenses, on their own emissive material — see SUMMIT.lampEmissive. */
     lampGlow: new Batch(60.0),
   }
@@ -960,7 +959,7 @@ export function buildSummit(scene, station) {
 
   // --- 7. the skyline -------------------------------------------------------
   /**
-   * Sixteen dark boxes on one material, laid out by a fixed integer sequence so the city is
+   * Sixteen stepped silhouettes on one material, laid out by a fixed integer sequence so the city is
    * the same city every boot. They are parallax and nothing else: no light reaches them, no
    * light comes off them but the windows already in their texture, and they are tinted down
    * with distance in the vertex colours so the far ones sit behind the near ones without a
@@ -980,10 +979,22 @@ export function buildSummit(scene, station) {
     const w = 520 + rand() * 1250
     const d = 520 + rand() * 1050
     const h = 900 + rand() * 4000 * (far / SUMMIT.skylineFar + 0.4)
-    const fade = 0.3 + 0.52 * (far / SUMMIT.skylineFar)
-    batches.city.box([x, x + w], [y, y + d * side], [PAVE_BOTTOM_Z - 300, PAVE_BOTTOM_Z + h], {
-      color: [fade, fade * 0.98, fade * 1.06],
-    })
+    const distance = far / SUMMIT.skylineFar
+    const fade = 0.78 - 0.42 * distance
+    const color = [fade * 0.85, fade * 0.96, fade * 1.12]
+    const roof = PAVE_BOTTOM_Z + h
+    const y0 = Math.min(y, y + d * side)
+    const y1 = Math.max(y, y + d * side)
+    const box = (x0, x1, a, b, z0, z1) => batches.city.box([x0, x1], [a, b], [z0, z1], { color })
+    box(x, x + w, y0, y1, PAVE_BOTTOM_Z - 300, roof)
+    // Roof setbacks establish distinct silhouettes without another material or draw.
+    if (i % 3 === 0) {
+      box(x + w * .15, x + w * .85, y0 + d * .15, y1 - d * .15, roof, roof + h * .15)
+      box(x + w * .32, x + w * .68, y0 + d * .32, y1 - d * .32, roof + h * .15, roof + h * .24)
+    } else if (i % 3 === 1) {
+      box(x + w * .58, x + w * .86, y0 + d * .25, y1 - d * .25, roof, roof + h * .2)
+    }
+
   }
 
   // --- 8. street dressing ---------------------------------------------------
