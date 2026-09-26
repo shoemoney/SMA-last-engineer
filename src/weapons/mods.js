@@ -1,5 +1,5 @@
 /**
- * mods.js — the weapon-side face of the five mods.
+ * mods.js — the weapon-side face of the four mods.
  *
  * A mod changes three separable things, and only one of them is damage:
  *
@@ -78,10 +78,8 @@ export function modBadges(mask, dualWield = false) {
 /**
  * Everything a shot's presentation needs, resolved once per trigger pull.
  *
- * A silenced shot is the same recording played quiet and pitched down — no separate
- * suppressed clip exists anywhere in the project — and its flash goes cold blue and short
- * rather than hot orange. That contrast is the only feedback the player gets that the
- * silencer is fitted, since it changes no damage number at all.
+ * The audio layer selects a dedicated quiet pistol recording. Suppression also reduces
+ * camera shake and gives the muzzle flash a short, cold-blue profile.
  */
 export function firePresentation(mask, random) {
   const suppressed = hasMod(mask, MOD.SILENCER)
@@ -97,8 +95,8 @@ export function firePresentation(mask, random) {
 }
 
 /**
- * The single seam between a weapon and the damage model. Zone scaling, the explosive
- * payload split, the burn stack and the armor-piercing flag are all decided on the far side
+ * The single seam between a weapon and the damage model. Zone scaling,
+ * the burn stack and the armor-piercing flag are all decided on the far side
  * of this call, in a module that cannot import three.js.
  */
 export function resolveModdedShot(baseDamage, zone, mask) {

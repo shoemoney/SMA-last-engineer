@@ -3,8 +3,7 @@
  *
  * 12 damage PER PELLET, 1.2 shots/s, 6 shells, 48 in reserve, 8 deg cone. Every pellet runs
  * the whole pipeline on its own: its own cone-random direction, its own zone lookup, its own
- * damage resolution, its own alert call — and, with the explosive mod fitted, its own blast.
- * Eight detonations in one frame is not a bug, it is what the numbers say.
+ * damage resolution, its own alert call — and its own damage result.
  *
  * SHOTGUN_VIEW is the first-person silhouette. The original pointed the shotgun class at
  * /Game/Weapons/SKM_GrenadeLauncher, deliberately reusing a grenade-launcher mesh; with no

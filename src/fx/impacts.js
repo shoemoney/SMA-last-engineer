@@ -765,15 +765,14 @@ export function createFX({ scene, camera, rng = new Rng(), container = null } = 
 
     /**
      * One connecting pellet, in the exact order the original's firing code ran it:
-     * hit marker, blood decal, impact burst, then explosion plus its shake.
+     * hit marker, blood decal and impact burst.
      */
-    hit(point, normal, { damage = 0, zone = DAMAGE.zones.body, bloody = false, surface, explosive = false, radius } = {}) {
+    hit(point, normal, { damage = 0, zone = DAMAGE.zones.body, bloody = false, surface } = {}) {
       if (bloody) {
         fx.damageNumber(point, damage, zone)
         fx.bloodHit(point, normal)
       }
       fx.impact(point, normal, { surface: surface ?? (bloody ? 'flesh' : DEFAULT_SURFACE), zone, bloody })
-      if (explosive) fx.explosion(point, radius)
     },
 
     /** Call once per RENDERED frame with the render delta. */

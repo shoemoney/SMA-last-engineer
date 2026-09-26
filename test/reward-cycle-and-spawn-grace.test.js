@@ -1,47 +1,24 @@
-/**
- * Two defects, same species: a comment states a fact the code did not implement.
- *
- * 1) REWARD.cycle's own doc says explosive lands on waves 9, 18, 27 (a 9-entry cycle,
- *    rarest mod, clean multiples of 9). The wave counter in this codebase is 1-based
- *    (WAVES.firstWaveNumber === 1, BOSS_FORMULA fires on `W % everyNthWave === 0` giving
- *    boss waves 5, 10, 15...), and rewardForWave() indexes with `cycle[waveNumber % cycle.length]`
- *    unmodified (see waveDirector.js / pickups.js — not owned here). So whichever slot
- *    the cycle array puts 'explosive' in is exactly the slot that fires on
- *    waveNumber % 9 === thatIndex. For the doc's claimed waves (9, 18, 27 — all ≡ 0 mod 9)
- *    to be true, 'explosive' must sit at index 0, not index 8.
- *
- * 2) A newly spawned ranged attacker (Spitter) had SHARED_DEFAULTS.timeUntilNextAttack at
- *    0.0, so its first spit could leave the barrel on the very frame it spawns — zero
- *    reaction time. rules.js's own melee ANIM.telegraphLeadSeconds analysis establishes
- *    this project's bar for "reactable": a 146ms peak-to-hit window, explicitly framed
- *    against a 6-frame/100ms window being "marginal". The fix gives ranged spawns an
- *    explicit, named grace constant instead of the bare 0.0.
- */
 import { describe, it, expect } from 'vitest'
 import * as THREE from 'three/webgpu'
+import { openingLoadout, PICKUP_DEFS } from '../src/world/pickups.js'
 import { WAVES, ZOMBIES } from '../src/game/rules.js'
 import { rewardForWave } from '../src/game/waveDirector.js'
 import { Zombie } from '../src/entities/zombie.js'
 import { HealthPool } from '../src/game/health.js'
 import { STEP } from '../src/core/loop.js'
 
-describe('reward cycle — explosive cadence matches its own doc comment', () => {
-  it('fires explosive on waves 9, 18 and 27, per the cycle doc comment', () => {
-    expect(rewardForWave(9)).toBe('explosive')
-    expect(rewardForWave(18)).toBe('explosive')
-    expect(rewardForWave(27)).toBe('explosive')
+describe('supported wave rewards', () => {
+  it('opening pickups only offer supported mods', () => {
+    const pickups = openingLoadout()
+    expect(pickups).toHaveLength(7)
+    expect(pickups).not.toContain('explosive')
+    expect(pickups.every(id => PICKUP_DEFS[id])).toBe(true)
   })
 
-  it('does NOT fire explosive on 8, 17, 26 (the pre-fix off-by-one waves)', () => {
-    expect(rewardForWave(8)).not.toBe('explosive')
-    expect(rewardForWave(17)).not.toBe('explosive')
-    expect(rewardForWave(26)).not.toBe('explosive')
-  })
-
-  it('keeps the cycle nine entries long with explosive appearing exactly once', () => {
-    const cycle = WAVES.REWARD.cycle
-    expect(cycle.length).toBe(9)
-    expect(cycle.filter(m => m === 'explosive').length).toBe(1)
+  it('cycles through every supported mod without explosive rounds', () => {
+    const rewards = Array.from({ length: 100 }, (_, i) => rewardForWave(i + 1))
+    expect(new Set(rewards)).toEqual(new Set(['silencer', 'incendiary', 'laserSight', 'armorPiercing']))
+    expect(rewards).not.toContain('explosive')
   })
 })
 

@@ -82,6 +82,7 @@ const FIRE_CUES = Object.freeze(
 )
 
 function isSilenced(payload) {
+  if (typeof payload?.suppressed === 'boolean') return payload.suppressed
   if (typeof payload?.silenced === 'boolean') return payload.silenced
   if (typeof payload?.mods === 'number') return (payload.mods & WEAPONS.MOD_BITS.silencer) !== 0
   return false
@@ -264,6 +265,7 @@ function createEngine() {
    * train arrival replaces the first.
    */
   function stealOldest(match) {
+    if (!match && stealOldest('pistol_suppressed')) return true
     for (const voice of active) {
       if (voice.done) continue
       if (match) {
@@ -365,7 +367,7 @@ function createEngine() {
     let sameCue = 0
     for (const v of active) if (!v.done && v.cue === name) sameCue++
     if (sameCue >= limit) stealOldest(name)
-    if (active.length >= AUDIO.MIX.maxSimultaneousVoices && !stealOldest(null)) {
+    if (active.length >= AUDIO.MIX.maxSimultaneousVoices && !stealOldest(name === 'pistol_suppressed' ? name : null)) {
       // Nothing stealable left, so the pool stays at its ceiling instead of drifting past it.
       counters.dropped++
       return null
@@ -601,13 +603,12 @@ export const sound = {
   play2D: (cue, opts = {}) => engine.play(cue, { ...opts, position: null }),
 
   weaponFire(cue, position, silenced = false) {
-    return engine.play(cue, {
+    const suppressedPistol = silenced && cue === WEAPONS.PISTOL.fireSound
+    return engine.play(suppressedPistol ? 'pistol_suppressed' : cue, {
       position,
       volume: silenced ? WEAPONS.FIRE_AUDIO.suppressedVolume : WEAPONS.FIRE_AUDIO.normalVolume,
-      // A silenced shot is the same recording at 0.75 speed, which stretches the 1.6 s clip to
-      // 2.133 s — there was never a separate suppressed take (spec/audio.md §3.1).
       pitch: silenced
-        ? WEAPONS.FIRE_AUDIO.suppressedPitch
+        ? (suppressedPistol ? WEAPONS.FIRE_AUDIO.suppressedPitch : 0.75)
         : rng.range(WEAPONS.FIRE_AUDIO.normalPitchMin, WEAPONS.FIRE_AUDIO.normalPitchMax),
     })
   },
@@ -733,7 +734,9 @@ export function initAudio({ bus = defaultBus, autoUnlock = true } = {}) {
   })
   on(EV.LOW_HEALTH, () => voice.say(AUDIO.VOICE.lowHealthLine))
   on(EV.PICKUP, (p) => {
-    if ((p?.kind ?? p?.id) === 'armor') voice.say(AUDIO.VOICE.armorPickupLine)
+    const kind = p?.kind ?? p?.id
+    if (kind === 'armor') voice.say(AUDIO.VOICE.armorPickupLine)
+    if (kind === 'health') voice.say(AUDIO.VOICE.healthPickupLine)
   })
   on(EV.MOD_GAINED, (p) => {
     const line = MOD_LINES[p?.mod ?? p?.id]

@@ -84,7 +84,7 @@ describe('wave scaling', () => {
 })
 
 describe('wave rewards', () => {
-  it('cycles the five mods by wave number', () => {
+  it('cycles the four mods by wave number', () => {
     const cycle = WAVES.REWARD.cycle
     for (let wave = 1; wave <= 12; wave++) {
       expect(rewardForWave(wave)).toBe(cycle[wave % cycle.length])

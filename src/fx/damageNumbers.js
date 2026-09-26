@@ -247,7 +247,7 @@ export function createDamageNumbers({ camera, container, seed = 0x0d4a6e }) {
   return {
     /**
      * @param {THREE.Vector3} position impact point
-     * @param {number} damage resolved DIRECT damage (already includes the explosive impact payload)
+     * @param {number} damage resolved DIRECT damage
      * @param {string} [zone] 'head' | 'chest' | 'body' | 'burn'
      */
     spawn(position, damage, zone = ZONES.body) {

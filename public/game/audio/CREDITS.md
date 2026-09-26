@@ -34,10 +34,6 @@ Direct download archive kept in `Weapons/_source/Prepared_SFX_Library.7z`
 (from https://opengameart.org/sites/default/files/Prepared%20SFX%20Library.7z, CC0), plus
 `Prepared Master Sheet.csv` describing every gun/take in the library for future re-use.
 
-**Gap — not sourced:** pistol shot (suppressed/silenced). No license-clean, curl-able,
-no-login source was found. Pixabay is Cloudflare-gated (403 to unattended curl) and
-Freesound.org requires an account/API key to download. Do not fake this one — flag it for a
-manual pull or a session with browser automation.
 
 ## Zombies/
 
@@ -80,3 +76,9 @@ key. Left out rather than mislabeling something else as a brake squeal.
 
 The opening narration was regenerated with JeremySay on September 25, 2026.
 Script: "One day I woke up... it was dark... and I realized... I was the last engineer."
+
+## September 25 suppressor and pickup voices
+
+Health pickup says "OHHH THAT’S THE STUFF!!!" and armor pickup says "Armor Baby!". Both clips were generated with JeremySay.
+
+The suppressed pistol is an original procedural effect with no reference samples. Reproduce the WAV with `python3 tools/generate-suppressed-sfx.py`, then encode using ffmpeg libmp3lame quality 2.

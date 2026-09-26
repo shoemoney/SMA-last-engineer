@@ -15,7 +15,9 @@
  * a gun, which is precisely the failure mode here.
  */
 import { describe, it, expect, beforeEach } from 'vitest'
-import { WeaponSystem } from '../src/weapons/weapon.js'
+import * as THREE from 'three/webgpu'
+import { HealthPool } from '../src/game/health.js'
+import { Weapon, WeaponSystem } from '../src/weapons/weapon.js'
 import { EventBus, EV } from '../src/core/events.js'
 import { WEAPONS } from '../src/game/rules.js'
 import { STEP } from '../src/core/loop.js'
@@ -198,5 +200,36 @@ describe('dual wield adds the left pistol, it never takes the primary trigger', 
       }
       expect(damageOf(dual.fired), `${id} total`).toBeGreaterThanOrEqual(damageOf(solo.fired))
     }
+  })
+})
+
+
+describe('weapon impacts stay on the struck target', () => {
+  it('all supported mods and the retired bit cause no splash damage or detonation', () => {
+    const target = { health: new HealthPool({ maxHealth: 500, health: 500 }) }
+    const neighbor = { health: new HealthPool({ maxHealth: 500, health: 500 }) }
+    let sphereQueries = 0
+    let explosions = 0
+    const bus = new EventBus()
+    bus.on(EV.EXPLOSION, () => explosions++)
+    const point = new THREE.Vector3(0, 0, -100)
+    const normal = new THREE.Vector3(0, 0, 1)
+    const noop = () => {}
+    const weapon = new Weapon(WEAPONS.PISTOL, {
+      bus,
+      world: {
+        trace: () => ({ actor: target, point, normal, zone: 'body' }),
+        bodiesInSphere: () => { sphereQueries++; return [target, neighbor] },
+        alert: noop,
+      },
+      fx: Object.fromEntries(['muzzleFlash', 'cameraShake', 'tracer', 'impact', 'bloodDecal', 'damageNumber', 'explosion'].map(key => [key, noop])),
+      audio: { play: noop },
+    })
+    weapon.applyMods(Object.values(WEAPONS.MOD_BITS).reduce((a, b) => a | b, 8))
+    weapon.fireSingleTrace(new THREE.Vector3(), new THREE.Vector3(0, 0, -1), 0, new THREE.Vector3())
+    expect(target.health.health).toBe(500 - WEAPONS.PISTOL.baseDamage)
+    expect(neighbor.health.health).toBe(500)
+    expect(sphereQueries).toBe(0)
+    expect(explosions).toBe(0)
   })
 })

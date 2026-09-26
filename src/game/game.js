@@ -225,14 +225,14 @@ const SUMMIT = Object.freeze({
    * The loose pistol IS the dual-wield second gun and it is the best pickup in the game —
    * it doubles the pistol's own 150-round reserve (WEAPONS.PISTOL.reserveAmmo — finite, not
    * unlimited) onto a second gun firing at the same rate — and PICKUPS.weaponsRespawn is
-   * false, so it is a one-time prize for finding the street at all. The explosive mod is
-   * the loudest entry in the mod table. The rifle is the resupply: `#grantPickup` rebuilds
+   * false. The shotgun adds close-range firepower; health and armor are exclusively
+   * wave supplies on the platform. The rifle is the resupply: `#grantPickup` rebuilds
    * a re-granted weapon with a full magazine AND a full reserve, which is the only ammo
    * resupply anywhere in this game.
    */
-  CACHE: Object.freeze(['pistol', 'explosive', 'rifle']),
+  CACHE: Object.freeze(['pistol', 'shotgun', 'rifle']),
   /** Restocked at every wave clear onto whichever pedestal is standing empty. */
-  RESTOCK: Object.freeze(['rifle', 'armor', 'shotgun', 'health']),
+  RESTOCK: Object.freeze(['rifle', 'shotgun', 'pistol']),
 
   /**
    * And the reason to come back down.
@@ -657,7 +657,7 @@ function rayBoxT(ox, oy, oz, dx, dy, dz, box, maxT) {
  * three-space impact point; it exposes `applyDamageResult` so the hit ZONE survives the
  * trip (going straight to the pool loses it, and the kill marker, the headshot count and
  * the score bonus all read off the zone); and it is one stable identity per body, so
- * `selectAoETargets` can exclude the directly hit zombie from its own explosion.
+ * repeated hits share the same damage adapter.
  */
 class ZombieTarget {
   constructor(zombie) {
@@ -971,8 +971,8 @@ export class Game {
       /**
        * Every REWARD PICKUP, drawn once.
        *
-       * #onWaveClear drops one pickup from WAVES.REWARD.cycle — five weapon mods, each with
-       * its own colour, material and pipeline — so the last zombie of each of the first five
+       * #onWaveClear drops one pickup from WAVES.REWARD.cycle — four weapon mods, each with
+       * its own colour, material and pipeline — so the last zombie of each of the first four
        * waves died into a first-ever draw and that frame paid the compile. Reported from real
        * play: "it locks up at the end of every wave... it's like when the last zombie dies".
        *
@@ -980,14 +980,23 @@ export class Game {
        * bar beats one that lands on a kill. Deferring it until after the menu was tried and
        * HUNG — it resizes the canvas, and the render loop is already running by then.
        *
-       * The cheaper fix, not done here, is to give the five mods ONE material and vary the
-       * colour per instance, so there is one pipeline instead of five.
+       * The cheaper fix, not done here, is to give the four mods ONE material and vary the
+       * colour per instance, so there is one pipeline instead of four.
        */
       const rewards = []
-      for (let i = 0; i < WAVES.REWARD.cycle.length; i++) {
+      const warmupPickups = [...new Set([...WAVES.REWARD.cycle, 'health', 'armor'])]
+      for (let i = 0; i < warmupPickups.length; i++) {
         try {
-          if (this.pickups.place(WAVES.REWARD.cycle[i], i % Math.max(1, this.pickups.points.length))) rewards.push(1)
-        } catch (err) { console.warn('[boot] could not pre-compile', WAVES.REWARD.cycle[i], err) }
+          const pickup = this.pickups.place(warmupPickups[i], i % Math.max(1, this.pickups.points.length))
+          if (pickup) {
+            // Normal platform points are outside this underground camera's frustum.
+            // A compact grid makes every temporary model visible before reset removes it.
+            pickup.root.position.set((i % 3 - 1) * 55, -4025 + Math.floor(i / 3) * 60, -250)
+            pickup.worldPosition.copy(pickup.root.position)
+            pickup.pool.position.y = -20
+            rewards.push(1)
+          }
+        } catch (err) { console.warn('[boot] could not pre-compile', warmupPickups[i], err) }
       }
       for (let i = 0; i < 3; i++) {
         this.pickups.update?.(1 / 60, null)
@@ -1065,7 +1074,7 @@ export class Game {
       world: this.#weaponWorld(),
       fx: this.#weaponFx(),
       // weapon.js plays each cue directly AND emits the matching bus event, and audio.js
-      // binds all four of those events (fire, reload, dry, explosion). Wiring the direct
+      // binds all three of those events (fire, reload, dry). Wiring the direct
       // adapter too would fire every gunshot twice. This one is deliberately inert; leaving
       // it undefined would instead warn, once, that "the guns are silent" — they are not.
       audio: { play: () => undefined },
@@ -1081,6 +1090,7 @@ export class Game {
        * call director.notifyZombieRemoved() or every kill is counted twice and waves end early.
        */
       bus.on(EV.ZOMBIE_SPAWN, p => this.#spawnZombie(p)),
+      bus.on(EV.WAVE_START, p => this.pickups.beginWave(p.wave)),
       bus.on(EV.WAVE_CLEAR, p => this.#onWaveClear(p)),
       bus.on(EV.TRAIN_INBOUND, p => this.#onTrainOrder(p)),
       bus.on(EV.PLAYER_DEATH, () => this.#onPlayerDeath()),
@@ -1149,24 +1159,6 @@ export class Game {
         return { point, normal, actor: target, zone: flesh.zone, distance: flesh.distance }
       },
 
-      /**
-       * Everything a blast can reach. The player is in the list on purpose:
-       * DAMAGE.explosive.damagesOwner is true, so a point-blank explosive round hurts the
-       * shooter, and spec section 17 flags that as shipped behaviour rather than a bug.
-       */
-      bodiesInSphere: (centre, radius) => {
-        const out = []
-        const radiusSq = radius * radius
-        for (const target of this.targets) {
-          if (!target.alive) continue
-          if (target.position.distanceToSquared(centre) <= radiusSq) out.push(target)
-        }
-        if (this.player.alive && this.player.position.distanceToSquared(centre) <= radiusSq) {
-          out.push(this.player)
-        }
-        return out
-      },
-
       alert: (origin) => {
         _specOrigin.set(origin.x, -origin.z, origin.y)
         this.zombies.alertNearby(_specOrigin)
@@ -1188,7 +1180,6 @@ export class Game {
       },
       bloodDecal: ({ point, normal }) => fx.bloodHit(point, normal),
       damageNumber: ({ point, value, zone }) => fx.damageNumber(point, value, zone),
-      explosion: ({ point, radius }) => fx.explosion(point, radius),
     }
   }
 
@@ -1412,7 +1403,7 @@ export class Game {
 
   /**
    * pickups.js drops each pickup's floor pool at `platformTopZ - point.z`, which is right
-   * for fourteen balls floating ten centimetres over the slab and puts a street cache's
+   * for thirteen balls floating ten centimetres over the slab and puts a street cache's
    * glow on a platform nine metres below it. The pool is re-seated onto the pavement. One
    * line, and the alternative is a coloured disc on the floor of a room the pickup is not in.
    */
@@ -1638,7 +1629,7 @@ export class Game {
    * A fresh run gets a fresh cache and its discovery back.
    *
    * NOT `summitPickups.reset()`: that method re-deals `openingLoadout()`, which is the
-   * platform's fourteen items, onto whatever points its manager holds — three of them, in
+   * platform's thirteen items, onto whatever points its manager holds — three of them, in
    * this case, so the whole loadout would stack on one pavement. The board is cleared by
    * hand and SUMMIT.CACHE is dealt instead.
    */
@@ -2027,9 +2018,9 @@ export class Game {
    * rules.js states every cue position in the spec's Z-up frame and audio.js defaults to
    * reading them that way, so the listener is converted rather than the forty cues.
    *
-   * Known cost: weapon.js and its explosions emit their positions in three's frame, so those
-   * two arrive permuted. The muzzle sits on top of the listener, which makes its error
-   * inaudible; an explosion's is not, and the honest fix is a frame on the payload rather
+   * Known cost: weapon.js emits its positions in three's frame, so those
+   * positions arrive permuted. The muzzle sits on top of the listener, which makes its error
+   * inaudible; the full fix is a frame on the payload rather
    * than a second conversion guessed at here.
    */
   #updateListener() {
@@ -2416,7 +2407,7 @@ export class Game {
     this.#advanceTrain(TRAIN.arrivalTime + TRAIN.doorOpenSeconds)
 
     this.weapons.grant('shotgun')
-    this.#applyMods(MOD_BITS.explosive, MOD_BITS.armorPiercing, MOD_BITS.laserSight)
+    this.#applyMods(MOD_BITS.incendiary, MOD_BITS.armorPiercing, MOD_BITS.laserSight)
     this.bus.emit(EV.MOD_GAINED, { mods: this.weapons.mods })
 
     const bodies = this.#plantCrowd(s.crowd, s.wave)

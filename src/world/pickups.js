@@ -1,24 +1,16 @@
 /**
- * pickups.js — the 14 floating balls the player walks the platform to collect.
- *
- * The placement algorithm is the original's, verbatim: the station publishes 18 points,
- * two per column, and the placer deals health/armor/mods/weapons round-robin onto points
- * 0-13 so no two of a kind ever sit together (spec/world-subway-station.md §4.3-§4.4).
- * The grant handshake is the original's too — the effect is asked whether it actually did
- * anything, and a refused grant leaves the pickup spinning on the floor, which is what
- * lets a full-health player walk past a heart.
- *
- * Everything visual is new. The original drew a 50 cm sphere and a shadowless point light
- * and that was the entire presentation, which is a large part of why the build got called
- * flat. Each pickup here is an emissive core inside an additive shell, a spinning ring, a
- * light that breathes, and a pool of its own colour thrown down on the wet platform, so a
- * cyan armor ball and a red heart are distinguishable from the far end of a 6000 cm room.
+ * Pickups: opening equipment and one random health/armor supply per wave.
+ * Seven equipment items occupy the station's first seven placement points. Wave
+ * supplies choose distinct vacant points and replace the previous wave's leftovers.
+ * A refused grant leaves the pickup standing. Health and armor use recognizable
+ * rotating heart and chestplate meshes; equipment retains its glowing shell.
  *
  * Frame: the spec authors Z-up, three.js is Y-up. The remap (x, y, z)_spec ->
  * (x, z, -y)_three happens once per pickup, at its root. Everything after that is Y-up.
  */
 
 import * as THREE from 'three/webgpu'
+import { buildSustainGeometries, createSustainVisual } from './sustainVisuals.js'
 import { PICKUPS, STATION, HEALTH, WEAPONS, WAVES, FX } from '../game/rules.js'
 import { bus, EV } from '../core/events.js'
 import { rng as defaultRng } from '../core/rng.js'
@@ -53,7 +45,7 @@ const LOOK = Object.freeze({
 
 /**
  * The deal list. `kind` drives the grant, `glow` drives every colour on the object.
- * Respawn times come straight from the placer: only health and armor ever came back.
+ * Health and armor are one-shot supplies replaced by the wave coordinator.
  */
 const DEFS = Object.freeze({
   health: Object.freeze({
@@ -75,7 +67,6 @@ const DEFS = Object.freeze({
   silencer: modDef('silencer', 'SIL', PICKUPS.GLOW.silencer),
   armorPiercing: modDef('armorPiercing', 'AP', PICKUPS.GLOW.armorPiercing),
   incendiary: modDef('incendiary', 'INC', PICKUPS.GLOW.incendiary),
-  explosive: modDef('explosive', 'EXP', PICKUPS.GLOW.explosive),
   laserSight: modDef('laserSight', 'LAS', PICKUPS.GLOW.laserSight),
   pistol: weaponDef('pistol', 'DUAL WIELD'),
   rifle: weaponDef('rifle', 'RIFLE'),
@@ -133,7 +124,7 @@ export function pickupPoints() {
   return points
 }
 
-/** The 14-item deal order, §4.4: 3 interleaved health/armor pairs, 5 mods, 3 weapons. */
+/** Opening equipment only; health and armor are managed once per wave. */
 export function openingLoadout() {
   const { sustainPairs, modOrder, weaponOrder, totalItems } = PICKUPS.OPENING_LOADOUT
   const order = []
@@ -344,6 +335,7 @@ function defaultGrant(player, def) {
 function buildSharedGeometry() {
   const r = BODY_RADIUS
   return {
+    ...buildSustainGeometries(r),
     core: new THREE.IcosahedronGeometry(r * LOOK.coreFraction, 1),
     shell: new THREE.IcosahedronGeometry(r * LOOK.shellFraction, 2),
     ring: new THREE.TorusGeometry(
@@ -518,11 +510,15 @@ class Pickup {
 
     const shared = pickupMaterials(colour)
     this.coreMat = shared.core
-    this.spinner.add(new THREE.Mesh(geo.core, this.coreMat))
-    this.spinner.add(buildIcon(def, geo, this.coreMat))
+    const sustainVisual = createSustainVisual(def.kind, geo, this.coreMat)
+    if (sustainVisual) this.spinner.add(sustainVisual)
+    else {
+      this.spinner.add(new THREE.Mesh(geo.core, this.coreMat))
+      this.spinner.add(buildIcon(def, geo, this.coreMat))
+    }
 
     this.shellMat = shared.shell
-    this.bobber.add(new THREE.Mesh(geo.shell, this.shellMat))
+    if (!sustainVisual) this.bobber.add(new THREE.Mesh(geo.shell, this.shellMat))
 
     this.ringMat = shared.ring
     const ring = new THREE.Mesh(geo.ring, this.ringMat)
@@ -738,13 +734,37 @@ export class PickupManager {
     return pickup
   }
 
-  /** §4.4: deal the opening 14 round-robin onto points 0-13. */
+  /** Deal opening equipment without consuming the wave supply allowance. */
   dealOpeningLoadout() {
     let index = 0
     for (const id of openingLoadout()) {
       this.place(id, index++ % this.points.length)
     }
     return this
+  }
+
+  /** Replace old wave supplies with at most one of each, on distinct vacant points. */
+  beginWave(waveNumber) {
+    if (this.supplyWave === waveNumber) return []
+    this.supplyWave = waveNumber
+    for (let i = this.pickups.length - 1; i >= 0; i--) {
+      const pickup = this.pickups[i]
+      if (pickup.def.kind !== 'health' && pickup.def.kind !== 'armor') continue
+      pickup.consume()
+      this.group.remove(pickup.root)
+      pickup.disposeMaterials()
+      if (this.occupied.get(pickup.pointIndex) === pickup) this.occupied.delete(pickup.pointIndex)
+      this.pickups.splice(i, 1)
+    }
+    const free = this.points.map((_, index) => index).filter(index => !this.occupied.has(index))
+    const placed = []
+    for (const id of ['health', 'armor']) {
+      if (!free.length) break
+      const choice = Math.min(free.length - 1, Math.floor(this.rng.next() * free.length))
+      const [index] = free.splice(choice, 1)
+      placed.push(this.place(id, index))
+    }
+    return placed
   }
 
   /**
@@ -838,6 +858,7 @@ export class PickupManager {
 
   /** Clear the board and deal a fresh opening loadout — the start of a new run. */
   reset() {
+    this.supplyWave = null
     for (const pickup of this.pickups) {
       this.group.remove(pickup.root)
       pickup.disposeMaterials()

@@ -6,7 +6,7 @@
  * purity rule in CONTRACT.md.
  */
 import { describe, it, expect } from 'vitest'
-import { MOD, resolveShot, zoneMultiplier, applyExplosiveAoE, selectAoETargets } from '../src/game/damage.js'
+import { MOD, resolveShot, zoneMultiplier } from '../src/game/damage.js'
 import { HealthPool, CONDITION, effectiveHealth, armorSplit } from '../src/game/health.js'
 import { DAMAGE, HEALTH, PICKUPS, WEAPONS } from '../src/game/rules.js'
 import { STEP } from '../src/core/loop.js'
@@ -75,73 +75,6 @@ describe('incendiary', () => {
     const settled = pool.health
     advance(pool, 10)
     expect(pool.health).toBe(settled)
-  })
-})
-
-describe('explosive', () => {
-  /**
-   * REBALANCED from the original spec's 5.0 impact multiplier. At 5.0 an explosive pistol
-   * body shot was 120 against a 100hp shambler — a one-shot kill that also dealt a flat 60
-   * to everything within 3.5m through walls. Played as "extremely easy". These assertions
-   * now pin the DELIBERATE deviation, not the original's numbers.
-   */
-  it('adds a 2x impact on the struck body and a 3x blast to everything else', () => {
-    const shot = resolveShot(PISTOL, ZONES.body, MOD.EXPLOSIVE)
-    expect(DAMAGE.explosive.impactMultiplier).toBe(2.0) // rebalanced from 5.0
-    expect(shot.directDamage).toBe(60) // 20 body + 20 * 2 impact
-    expect(shot.aoeDamage).toBe(60) // 20 * 3, still deliberately not zone-scaled
-    expect(shot.aoeRadius).toBe(DAMAGE.explosive.radius)
-    // A headshot scales only the direct term; the blast is the same size either way.
-    expect(resolveShot(PISTOL, ZONES.head, MOD.EXPLOSIVE).directDamage).toBe(140) // 20*5 + 20*2
-    // It must still beat a plain body shot decisively, or the mod is not worth picking up.
-    expect(shot.directDamage).toBeGreaterThan(resolveShot(PISTOL, ZONES.body, MOD.NONE).directDamage * 2)
-  })
-
-  it('falls off with distance instead of dealing flat damage across the sphere', () => {
-    expect(DAMAGE.explosive.damageFallsOff).toBe(true) // rebalanced from the original's false
-    const shot = resolveShot(PISTOL, ZONES.body, MOD.EXPLOSIVE)
-    const at = z => {
-      const t = { position: { x: 0, y: 0, z }, health: new HealthPool({ maxHealth: 500, health: 500 }) }
-      return applyExplosiveAoE({ impactPoint: { x: 0, y: 0, z: 0 }, candidates: [t], result: shot }).totalDealt
-    }
-    const point_blank = at(1)
-    const edge = at(DAMAGE.explosive.radius - 1)
-    expect(point_blank).toBeGreaterThan(edge)
-    // The edge still hurts — a blast that does nothing at 3.4m is not a blast.
-    expect(edge).toBeGreaterThan(shot.aoeDamage * DAMAGE.explosive.minFalloffFraction * 0.9)
-  })
-
-  it('excludes the body it hit directly and spares anything past the radius', () => {
-    const near = { position: { x: 0, y: 0, z: 100 }, health: new HealthPool({ maxHealth: 500, health: 500 }) }
-    const far = { position: { x: 0, y: 0, z: DAMAGE.explosive.radius + 1 }, health: new HealthPool({ maxHealth: 500, health: 500 }) }
-    const direct = { position: { x: 0, y: 0, z: 0 }, health: new HealthPool({ maxHealth: 500, health: 500 }) }
-
-    const selected = selectAoETargets({
-      impactPoint: { x: 0, y: 0, z: 0 },
-      candidates: [direct, near, far],
-      radius: DAMAGE.explosive.radius,
-      directTarget: direct,
-    })
-    expect(selected).toEqual([near])
-  })
-
-  it('respects armor on the area pass even with armor piercing fitted', () => {
-    const shot = resolveShot(PISTOL, ZONES.body, MOD.EXPLOSIVE | MOD.ARMOR_PIERCING)
-    const target = { position: { x: 0, y: 0, z: 10 }, health: new HealthPool({ maxHealth: 500, health: 500, armor: 200 }) }
-    const { totalDealt } = applyExplosiveAoE({
-      impactPoint: { x: 0, y: 0, z: 0 },
-      candidates: [target],
-      result: shot,
-      directTarget: null,
-    })
-    // Armor eats half whatever arrives: WEAPONS.MODS.armorPiercing.appliesToAreaDamage is false.
-    // The arriving amount is now distance-scaled, so assert the RATIO rather than a constant —
-    // a test that hardcodes the post-falloff number would have to be rewritten on every tune.
-    expect(WEAPONS.MODS.armorPiercing.appliesToAreaDamage).toBe(false)
-    const arrived = totalDealt / (1 - HEALTH.armorAbsorption)
-    expect(arrived).toBeLessThanOrEqual(shot.aoeDamage)
-    expect(arrived).toBeGreaterThan(shot.aoeDamage * 0.9)  // 10cm from the centre of a 350cm blast
-    expect(target.health.armor).toBeCloseTo(200 - arrived * HEALTH.armorAbsorption, 6)
   })
 })
 

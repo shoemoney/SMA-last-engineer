@@ -11,9 +11,9 @@
  *      it is not a baked curve. The harshness is the whole point, so `update()`
  *      belongs on the render tick with the render delta, not on the fixed
  *      simulation step.
- *   2. Shakes STACK. An explosive shot fires a 1.0 shake and a 1.5 shake on the
+ *   2. Shakes STACK. A shot and a concurrent environmental impact add shakes on the
  *      same frame and both offsets sum. No cap, no priority, no dedupe — that is
- *      why explosions read as the screen coming apart.
+ *      why simultaneous impacts feel stronger.
  *
  * The shake is a pure post-effect. It never touches where the player is or where
  * a trace goes (rules.FX.SHAKE.affectsAim is false), so it is applied to the

@@ -115,3 +115,42 @@ it('defaults malformed storage to audible and tolerates unavailable storage on r
   expect(r.sound.say('vo_wave_start')).toBe(true)
   r.disposeAudio()
 })
+
+
+it('uses the dedicated suppressed pistol take without changing other suppressed weapons', async () => {
+  const { sound, disposeAudio } = await setup()
+  sound.weaponFire('pistol_shot', null, true)
+  expect(sourceFor('pistol_suppressed').playbackRate.value).toBe(1)
+  expect(sourceFor('pistol_shot')).toBeUndefined()
+  sound.weaponFire('rifle_shot', null, true)
+  expect(sourceFor('rifle_shot').playbackRate.value).toBe(.75)
+  disposeAudio()
+})
+
+it('sacrifices quiet pistol shots before other effects at the global voice limit', async () => {
+  const { sound, disposeAudio } = await setup()
+  const { AUDIO } = await import('../src/game/rules.js')
+  sound.weaponFire('pistol_shot', null, true)
+  const suppressed = sourceFor('pistol_suppressed')
+  while (sound.state().active < AUDIO.MIX.maxSimultaneousVoices) sound.play2D('bullet_casing')
+  sound.play2D('zombie_scream')
+  expect(suppressed.stop).toHaveBeenCalled()
+  const before = sources.length
+  expect(sound.weaponFire('pistol_shot', null, true)).toBe(null)
+  expect(sources).toHaveLength(before)
+  expect(sourceFor('zombie_scream').stop).not.toHaveBeenCalled()
+  disposeAudio()
+})
+
+it.each(['health', 'armor'])('plays new %s pickup audio until Jeremy is muted', async kind => {
+  const { sound, bus, EV, disposeAudio } = await setup()
+  bus.emit(EV.PICKUP, { kind })
+  const cue = `vo_${kind}_pickup`
+  expect(sourceFor(cue).start).toHaveBeenCalled()
+  sound.setJeremyMuted(true)
+  expect(sourceFor(cue).stop).toHaveBeenCalled()
+  const before = sources.length
+  bus.emit(EV.PICKUP, { kind })
+  expect(sources).toHaveLength(before)
+  disposeAudio()
+})

@@ -66,6 +66,7 @@ function makeGame() {
   const game = new Game({ renderer: makeRenderer(), scene, camera })
   activeGame = game
   game.startRun()
+  expect(game.summitPickups.pickups.map(p => p.def.id)).not.toContain('explosive')
   return game
 }
 

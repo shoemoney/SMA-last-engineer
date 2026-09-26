@@ -309,7 +309,6 @@ html, body {
 .mod--silencer { color: var(--steel); }
 .mod--armorpiercing { color: var(--cyan); }
 .mod--incendiary { color: #ff7a1a; }
-.mod--explosive { color: var(--amber); }
 .mod--lasersight { color: var(--blood); }
 
 /* floating damage numbers */

@@ -76,37 +76,13 @@ export const DAMAGE = Object.freeze({
     maxStacksPerTarget: 6, // CHOSEN: not in original spec — the original stacked without limit, which made automatic incendiary fire compound past any balance
   }),
 
-  explosive: Object.freeze({
-    radius: 350.0, // ShoeinatorTypes.h FShoeDamageRules — cm
-    /**
-     * REBALANCED. The original's 5.0 made an explosive pistol body shot 20 + 20*5 = 120
-     * against a 100hp shambler: a one-shot kill that ALSO dealt 60 to everything within
-     * 3.5m, through walls, with no falloff. Reported from play as "with the explosive
-     * rounds the game is extremely easy", and the arithmetic agrees.
-     *
-     * 2.0 makes the same shot 60 — still the best mod in the game, still a two-shot kill
-     * on a shambler where the base pistol needs five, but no longer a delete button.
-     */
-    impactMultiplier: 2.0, // CHOSEN: rebalanced from the original's 5.0
-    aoeMultiplier: 3.0, // ShoeinatorTypes.h — damage to every OTHER body in the blast
-    /**
-     * REBALANCED from the original's `false`. Flat damage meant a body at 349cm took
-     * exactly as much as one at 1cm, which is what turned every explosive round into a
-     * crowd clear. Linear falloff to a quarter (minFalloffFraction) at the blast edge —
-     * it never reaches zero, so a body at the very edge still takes real damage.
-     */
-    damageFallsOff: true, // CHOSEN: rebalanced — the original applied flat damage to the whole sphere
-    minFalloffFraction: 0.25, // CHOSEN: a body at the very edge still takes a quarter
-    damagesOwner: true, // ShoeWeaponBase.cpp — the area pass excludes only the directly hit actor, so self-damage is live
-  }),
-
   /** An unsilenced shot that HIT something wakes every zombie inside this sphere around the
    *  trace origin (the camera, not the muzzle). No occlusion, no falloff. */
   hearingRadius: 3000.0, // ShoeWeaponBase.cpp — cm
 })
 
 // ---------------------------------------------------------------------------
-// WEAPONS — three guns, five mods, one bitmask
+// WEAPONS — three guns, four mods, one bitmask
 // ---------------------------------------------------------------------------
 
 export const WEAPONS = Object.freeze({
@@ -195,7 +171,6 @@ export const WEAPONS = Object.freeze({
     silencer: 1, // ShoeinatorTypes.h EWeaponMod — bit 0
     armorPiercing: 2, // ShoeinatorTypes.h EWeaponMod — bit 1
     incendiary: 4, // ShoeinatorTypes.h EWeaponMod — bit 2
-    explosive: 8, // ShoeinatorTypes.h EWeaponMod — bit 3
     laserSight: 16, // ShoeinatorTypes.h EWeaponMod — bit 4
   }),
 
@@ -219,21 +194,13 @@ export const WEAPONS = Object.freeze({
       id: 'armorPiercing', // ShoeinatorTypes.h
       label: 'AP', // ShoeHUD.cpp
       name: 'ARMOR PIERCING',
-      bypassesArmor: true, // ShoeWeaponBase.cpp — direct hit only; area damage still respects armor
-      appliesToAreaDamage: false, // ShoeWeaponBase.cpp
+      bypassesArmor: true, // ShoeWeaponBase.cpp — direct hit
     }),
     incendiary: Object.freeze({
       bit: 4, // ShoeinatorTypes.h EWeaponMod
       id: 'incendiary', // ShoeinatorTypes.h
       label: 'INC', // ShoeHUD.cpp
       name: 'INCENDIARY',
-    }),
-    explosive: Object.freeze({
-      bit: 8, // ShoeinatorTypes.h EWeaponMod
-      id: 'explosive', // ShoeinatorTypes.h
-      label: 'EXP', // ShoeHUD.cpp
-      name: 'EXPLOSIVE ROUNDS',
-      cameraShakeScale: 1.5, // ShoeWeaponBase.cpp — stacks ON TOP of the shot's own shake, once per detonation
     }),
     laserSight: Object.freeze({
       bit: 16, // ShoeinatorTypes.h EWeaponMod
@@ -245,7 +212,7 @@ export const WEAPONS = Object.freeze({
   }),
 
   /** Badge draw order on the HUD, right to left. DUAL is not a mod bit; it rides along. */
-  MOD_BADGE_ORDER: Object.freeze(['silencer', 'armorPiercing', 'incendiary', 'explosive', 'laserSight', 'dualWield']), // ShoeHUD.cpp
+  MOD_BADGE_ORDER: Object.freeze(['silencer', 'armorPiercing', 'incendiary', 'laserSight', 'dualWield']), // ShoeHUD.cpp
   dualWieldBadgeLabel: 'DUAL', // ShoeHUD.cpp
 
   FIRE_AUDIO: Object.freeze({
@@ -253,10 +220,10 @@ export const WEAPONS = Object.freeze({
     normalPitchMin: 0.96, // ShoeWeaponBase.cpp — per-shot uniform random
     normalPitchMax: 1.04, // ShoeWeaponBase.cpp
     suppressedVolume: 0.28, // ShoeWeaponBase.cpp
-    suppressedPitch: 0.75, // ShoeWeaponBase.cpp
+    suppressedPitch: 1.0, // ShoeWeaponBase.cpp
     reloadVolume: 0.9, // ShoeWeaponBase.cpp — plays BEFORE the reload guard, so even a rejected reload clicks
     emptyChamberVolume: 0.8, // ShoeWeaponBase.cpp — unreachable in the original; the port makes it reachable
-    explosionVolume: 1.0, // ShoeWeaponBase.cpp — once per detonating pellet, so up to 8 per shotgun pull
+    explosionVolume: 1.0, // Generic environmental explosion volume
   }),
 
   /**
@@ -664,24 +631,7 @@ export const WAVES = Object.freeze({
 
   /** The mod reward drop was fully implemented and never called. The port fires it on wave clear. */
   REWARD: Object.freeze({
-    /**
-     * REBALANCED. The original's five-entry cycle handed out explosive every fifth wave —
-     * waves 3, 8, 13, 18 — which with its old multipliers meant the game was solved from
-     * wave 3 onward. This nine-entry cycle keeps every mod in rotation and makes explosive
-     * the rarest by a wide margin: wave 9, then 18, then 27.
-     *
-     * Original, for reference:
-     *   ['incendiary', 'armorPiercing', 'explosive', 'laserSight', 'silencer']
-     */
-    cycle: Object.freeze([
-      'explosive', 'silencer', 'incendiary', 'laserSight', 'armorPiercing',
-      'incendiary', 'silencer', 'laserSight', 'armorPiercing',
-    ]), // CHOSEN: rebalanced from ShoePickupPlacer.cpp DropRewardForWave's 5-entry cycle.
-        // FIXED: 'explosive' must sit at index 0 — rewardForWave() indexes with
-        // `cycle[waveNumber % cycle.length]` against a 1-based waveNumber (waveDirector.js /
-        // pickups.js), the same convention BOSS_FORMULA uses (`W % 5 === 0` -> wave 5, 10, 15).
-        // Index 0 is the only slot that lands on waveNumber % 9 === 0, i.e. waves 9, 18, 27 —
-        // what the comment below has always claimed. It was at index 8 (waves 8, 17, 26) before.
+    cycle: Object.freeze(['silencer', 'incendiary', 'laserSight', 'armorPiercing']),
     trigger: 'waveClear', // CHOSEN: not in original spec — DropRewardForWave had zero callers
     checksOccupancy: true, // CHOSEN: not in original spec — the original dropped onto a uniformly random point with no check
   }),
@@ -1220,7 +1170,7 @@ export const PICKUPS = Object.freeze({
   bobAmplitude: 15.0, // ShoePickupBase.h — cm above/below the base position
   bobPeriod: 2.0, // ShoePickupBase.h — z = baseZ + sin(2*PI*t/2.0) * 15
   respawnTime: 30.0, // ShoePickupBase.h — base-class default
-  sustainRespawnTime: 45.0, // ShoePickupPlacer.cpp — applied to health and armor pickups only
+  sustainRespawnTime: null, // One health and armor pickup per wave; never timed respawns
 
   healPercent: 50.0, // ShoePickupHealth.h — percent of MAX health, so +50 at the default; refused (and left standing) at the overheal cap
   armorAmount: 50.0, // ShoePickupArmor.h — flat, capped at overArmorCap
@@ -1232,19 +1182,18 @@ export const PICKUPS = Object.freeze({
     silencer: 0x808080, // ShoePickupWeaponMod.cpp — RGB (0.5, 0.5, 0.5)
     armorPiercing: 0xffff00, // ShoePickupWeaponMod.cpp
     incendiary: 0xff6600, // ShoePickupWeaponMod.cpp — RGB (1.0, 0.4, 0.0)
-    explosive: 0xff3300, // ShoePickupWeaponMod.cpp — RGB (1.0, 0.2, 0.0)
     laserSight: 0x00ff00, // ShoePickupWeaponMod.cpp
   }),
 
-  /** 14 items dealt round-robin across the station's 18 points, so no two of a kind sit together. */
+  /** Seven permanent opening items; wave supplies are placed separately at random. */
   OPENING_LOADOUT: Object.freeze({
-    sustainPairs: 3, // ShoePickupPlacer.cpp — 3 health + 3 armor, interleaved
-    modOrder: Object.freeze(['laserSight', 'silencer', 'armorPiercing', 'incendiary', 'explosive']), // ShoePickupPlacer.cpp — onto points 6-10
-    weaponOrder: Object.freeze(['pistol', 'rifle', 'shotgun']), // ShoePickupPlacer.cpp — the pistol here is the dual-wield second gun; points 11-13
-    totalItems: 14, // ShoePickupPlacer.cpp — points 14-17 start empty
+    sustainPairs: 0, // Wave supplies are dealt by PickupManager.beginWave
+    modOrder: Object.freeze(['laserSight', 'silencer', 'armorPiercing', 'incendiary']), // Opening equipment points 0-3
+    weaponOrder: Object.freeze(['pistol', 'rifle', 'shotgun']), // The pistol grants dual wield; opening points 4-6
+    totalItems: 7, // Four mods and three weapons
   }),
 
-  /** Mods and weapons never came back in the original; only health and armor respawned. */
+  /** Equipment does not respawn; health and armor are replaced only at wave start. */
   modsRespawn: false, // ShoePickupPlacer.cpp
   weaponsRespawn: false, // ShoePickupPlacer.cpp
 
@@ -1424,7 +1373,6 @@ export const FX = Object.freeze({
     fadeStartFraction: 0.4, // ShoeDamageNumber.cpp — holds full opacity to 0.36 s
     fadeDurationFraction: 0.6, // ShoeDamageNumber.cpp — 0.54 s, reaching zero at 0.9 s
     minValue: 0, // ShoeDamageNumber.cpp — round(damage) floored at 0; no sign, decimals or separators
-    includesExplosiveImpact: true, // ShoeWeaponBase.cpp — includes the impact payload, excludes area damage and burn
     billboard: true, // CHOSEN: not in original spec — the original aimed the actor's forward axis at the camera, which renders the glyphs mirrored
     maxLive: 48, // CHOSEN: not in original spec — a shotgun blast into a crowd spawned 8 at once with no budget
   }),
@@ -1572,6 +1520,7 @@ export const AUDIO = Object.freeze({
   CUES: Object.freeze({
     headshot_splat: Object.freeze({ category: 'weapons', seconds: 0.48 }),
     bullet_casing: Object.freeze({ category: 'weapons', seconds: 1.43 }),
+    pistol_suppressed: Object.freeze({ category: 'weapons', seconds: 0.278 }),
     pistol_shot: Object.freeze({ category: 'weapons', seconds: 1.7 }), // RawAssets/Audio/Weapons
     rifle_shot: Object.freeze({ category: 'weapons', seconds: 1.74 }), // RawAssets/Audio/Weapons
     shotgun_blast: Object.freeze({ category: 'weapons', seconds: 2.02 }), // RawAssets/Audio/Weapons
@@ -1617,12 +1566,12 @@ export const AUDIO = Object.freeze({
     vo_countdown_3: Object.freeze({ seconds: 0.64 }), // RawAssets/Audio/VO
     vo_countdown_2: Object.freeze({ seconds: 0.72 }), // RawAssets/Audio/VO
     vo_countdown_1: Object.freeze({ seconds: 0.64 }), // RawAssets/Audio/VO
-    vo_armor_pickup: Object.freeze({ seconds: 1.12, orphan: true }), // RawAssets/Audio/VO
+    vo_health_pickup: Object.freeze({ seconds: 2.24 }),
+    vo_armor_pickup: Object.freeze({ seconds: 0.8 }), // RawAssets/Audio/VO
     vo_dual_wield: Object.freeze({ seconds: 2.4, orphan: true }), // RawAssets/Audio/VO
     vo_low_health: Object.freeze({ seconds: 2.64, orphan: true }), // RawAssets/Audio/VO
     vo_train_inbound: Object.freeze({ seconds: 2.56, orphan: true }), // RawAssets/Audio/VO
     vo_mod_armorpierce: Object.freeze({ seconds: 2.0, orphan: true }), // RawAssets/Audio/VO
-    vo_mod_explosive: Object.freeze({ seconds: 2.16, orphan: true }), // RawAssets/Audio/VO
     vo_mod_incendiary: Object.freeze({ seconds: 2.16, orphan: true }), // RawAssets/Audio/VO
     vo_mod_laser: Object.freeze({ seconds: 2.4, orphan: true }), // RawAssets/Audio/VO
     vo_mod_silencer: Object.freeze({ seconds: 2.88, orphan: true }), // RawAssets/Audio/VO
@@ -1659,6 +1608,7 @@ export const AUDIO = Object.freeze({
     lowHealthLine: 'vo_low_health', // CHOSEN: not in original spec — the clip shipped with no call site
     lowHealthThreshold: 0.3, // CHOSEN: not in original spec — fraction of max health; no threshold constant existed anywhere
     lowHealthCooldown: 25.0, // CHOSEN: not in original spec — seconds, so it does not nag
+    healthPickupLine: 'vo_health_pickup',
     armorPickupLine: 'vo_armor_pickup', // CHOSEN: not in original spec
     dualWieldLine: 'vo_dual_wield', // CHOSEN: not in original spec
     trainInboundLine: 'vo_train_inbound', // CHOSEN: not in original spec
@@ -1666,7 +1616,6 @@ export const AUDIO = Object.freeze({
       silencer: 'vo_mod_silencer', // CHOSEN: not in original spec
       armorPiercing: 'vo_mod_armorpierce', // CHOSEN: not in original spec
       incendiary: 'vo_mod_incendiary', // CHOSEN: not in original spec
-      explosive: 'vo_mod_explosive', // CHOSEN: not in original spec
       laserSight: 'vo_mod_laser', // CHOSEN: not in original spec
     }),
     ducksOtherChannels: true, // CHOSEN: not in original spec — the original had no ducking, so vo_intro talked over vo_wave_start at t=0

@@ -19,7 +19,6 @@
  */
 import * as THREE from 'three/webgpu'
 import { DAMAGE, FX, PLAYER, WEAPONS } from '../game/rules.js'
-import { applyExplosiveAoE } from '../game/damage.js'
 import { bus as sharedBus, EV } from '../core/events.js'
 import { rng as sharedRng } from '../core/rng.js'
 import {
@@ -146,7 +145,6 @@ export class Weapon {
 
     const world = deps.world
     this.traceRay = hook(world, 'trace', 'shots hit nothing and the game is unwinnable')
-    this.bodiesInSphere = hook(world, 'bodiesInSphere', 'explosive rounds deal no area damage')
     this.alertZombies = hook(world, 'alert', 'gunfire never wakes an unaware zombie')
 
     const fx = deps.fx
@@ -156,7 +154,6 @@ export class Weapon {
     this.fxImpact = hook(fx, 'impact', 'hits leave no burst')
     this.fxBloodDecal = hook(fx, 'bloodDecal', 'flesh hits leave no blood')
     this.fxDamageNumber = hook(fx, 'damageNumber', 'damage is never shown to the player')
-    this.fxExplosion = hook(fx, 'explosion', 'explosive rounds detonate invisibly')
 
     this.playSound = hook(deps.audio, 'play', 'the guns are silent')
   }
@@ -349,8 +346,6 @@ export class Weapon {
 
     this.fxImpact({ point: hit.point.clone(), normal: hit.normal.clone(), zone, flesh: Boolean(pool) })
 
-    if (result.aoeDamage > 0) this.detonate(actor, hit.point, result)
-
     // Alerting runs per pellet, so a shotgun blast wakes the station eight times over —
     // redundant but harmless, and the adapter is free to keep a live zombie list rather
     // than walking the whole world eight times.
@@ -373,35 +368,6 @@ export class Weapon {
     if (result.burnTicks > 0 && !pool.isDead && typeof pool.addBurn === 'function') {
       pool.addBurn(result.burnDamagePerTick, result.burnTicks, result.burnTickInterval, this.owner)
     }
-  }
-
-  /**
-   * One pellet, one detonation. A shotgun that lands all eight on the same zombie therefore
-   * produces eight flashes, eight bangs and eight 1.5-scale shakes in a single frame, which
-   * is exactly what the numbers say and is the mod's whole character.
-   */
-  detonate(directActor, point, result) {
-    this.fxExplosion({ point: point.clone(), radius: result.aoeRadius })
-    this.fxCameraShake(FX.SHAKE.scaleExplosion)
-    this.playSound('explosion', { volume: FIRE_AUDIO.explosionVolume, position: point.clone() })
-    this.bus.emit(EV.EXPLOSION, { point: point.clone(), radius: result.aoeRadius, weapon: this.id })
-
-    applyExplosiveAoE({
-      impactPoint: point,
-      candidates: this.bodiesInSphere(point, result.aoeRadius) ?? [],
-      result,
-      directTarget: directActor,
-      instigator: this.owner,
-      // WITHOUT THIS LINE THE LINE-OF-SIGHT CHECK DOES NOT EXIST. selectAoETargets falls back
-      // to radius-only whenever traceRay is absent, so the occlusion logic and its tests can
-      // both be perfectly correct while blasts still kill through solid columns in the shipped
-      // game. The tests supply traceRay themselves, which is exactly why they could not catch
-      // this being unwired.
-      //
-      // Wrapped rather than passed directly so the shooter's own ignore list applies: the same
-      // trace that fires the bullets, so there is one raycaster, not two.
-      traceRay: (origin, direction, range) => this.traceRay(origin, direction, range, this.ignore),
-    })
   }
 
   ammoState() {

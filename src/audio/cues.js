@@ -120,6 +120,7 @@ function clampToPool(n) {
 }
 
 const VOICE_LIMITS = Object.freeze({
+  pistol_suppressed: overlapsWithin(AUDIO.CUES.pistol_suppressed.seconds, WEAPONS.PISTOL.fireInterval / 2),
   // The off-hand pistol fires on a trigger EDGE and ADDS output rather than trading it: the
   // primary receives every press regardless of the fireLeftNext alternation (weapon.js
   // WeaponSystem#startFire), and the left pistol joins every other press on its own
@@ -212,11 +213,11 @@ export const VO_PRIORITY = Object.freeze([
   AUDIO.VOICE.lowHealthLine,
   AUDIO.VOICE.trainInboundLine,
   AUDIO.VOICE.dualWieldLine,
-  AUDIO.VOICE.modLines.explosive,
   AUDIO.VOICE.modLines.incendiary,
   AUDIO.VOICE.modLines.armorPiercing,
   AUDIO.VOICE.modLines.laserSight,
   AUDIO.VOICE.modLines.silencer,
+  AUDIO.VOICE.healthPickupLine,
   AUDIO.VOICE.armorPickupLine,
   ...Object.values(COUNTDOWN_LINES).reverse(),
 ])
@@ -248,12 +249,12 @@ export const VO_SUBTITLES = Object.freeze({
   vo_countdown_3: 'Three.',
   vo_countdown_2: 'Two.',
   vo_countdown_1: 'One.',
-  vo_armor_pickup: 'Armor on.',
+  vo_health_pickup: 'OHHH THAT’S THE STUFF!!!',
+  vo_armor_pickup: 'Armor Baby!',
   vo_dual_wield: 'Now we’re talking — two pistols.',
   vo_low_health: 'I’m hit bad. I need a medkit.',
   vo_train_inbound: 'Next train inbound. Get ready.',
   vo_mod_armorpierce: 'Armor piercing. Nothing’s safe.',
-  vo_mod_explosive: 'Explosive rounds — stand back.',
   vo_mod_incendiary: 'Incendiary rounds loaded.',
   vo_mod_laser: 'Laser sight. No more missing.',
   vo_mod_silencer: 'Silencer on. Let’s do this quietly.',
