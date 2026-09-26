@@ -170,6 +170,8 @@ if (AUDIO_ENABLED) {
   console.info('[boot] mixer off under ?verify=1 — see AUDIO_ENABLED; the cue sheet is still fetched and checked')
 }
 
+const audioReady = preloadAudio(count => track(LOAD.audio / count, LOAD.text.audio))
+
 const game = new Game({
   renderer, scene, camera, hud, bus, rng,
   sound: AUDIO_ENABLED ? sound : null,
@@ -177,7 +179,7 @@ const game = new Game({
 track(LOAD.world, LOAD.text.world)
 
 await nextFrame()
-await preloadAudio(count => track(LOAD.audio / count, LOAD.text.audio))
+await audioReady
 
 // materials.js fetches the logo during the station build and resolves false, loudly, if the
 // PNG 404s. Awaiting it keeps the backlit sign off the first frame rather than popping it in
