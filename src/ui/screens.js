@@ -347,9 +347,9 @@ export async function showGameOver(stats = {}) {
   // Six cells against .runstats' three columns — two full rows, no orphan left
   // hanging against the left edge at 1280x720.
   renderStatGrid(byId('run-stats'), [
-    ['Wave reached', formatNumber(wave)],
+    [Number.isFinite(stats.completedWaves) ? 'Waves completed' : 'Wave reached', formatNumber(stats.completedWaves ?? wave)],
     ['Kills', formatNumber(kills)],
-    ['Time survived', formatDuration(stats.duration ?? 0)],
+    [Number.isFinite(stats.combatSeconds) ? 'Combat survived' : 'Time survived', formatDuration(stats.combatSeconds ?? stats.duration ?? 0)],
     ['Headshots', formatNumber(headshots)],
     [measured ? 'Accuracy' : 'Headshot rate', `${formatNumber(precision)}%`],
     ['Score', formatNumber(stats.score ?? 0)],

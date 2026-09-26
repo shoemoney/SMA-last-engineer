@@ -69,28 +69,54 @@
     <div class="mods" id="mod-strip"></div>
   </div>
 
+  <p id="run-controls-hint" class="run-controls-hint" hidden></p>
   <div class="hud__damagenumbers" id="damage-numbers"></div>
 </div>
 
 <!-- ============ MENU ============ -->
 <div id="menu" class="screen screen--menu">
+  <video id="hero-gameplay" class="hero-gameplay" muted loop playsinline preload="none" poster="./game/hero-gameplay.png" aria-hidden="true"><source src="./game/hero-gameplay.webm" type="video/webm"></video>
   <div class="screen__inner">
     <img class="logo" src="./game/img/T_ShoeMoneyLogo.png" alt="ShoeMoney">
     <h1 class="title title--engineer"><span class="title__brand">SHOEMONEY</span><span class="title__game">LAST ENGINEER</span></h1>
     <p class="tagline">One engineer. No backup. The last train never stops.</p>
-    <button class="btn btn--primary" id="btn-play">ENTER THE STATION</button>
+    <button class="btn btn--primary" id="btn-play">START</button>
     <label class="jeremy-mute" for="mute-jeremy">
-      <input type="checkbox" id="mute-jeremy">
+      <input type="checkbox" id="mute-jeremy" role="switch">
+      <span class="mute-switch" aria-hidden="true"></span>
       <span>Mute Jeremy</span>
     </label>
     <div class="stats" id="menu-stats"></div>
+    <details class="hero-leaderboard">
+      <summary>TOP 10 SURVIVORS</summary>
+      <p id="menu-leaderboard-status" aria-live="polite"></p>
+      <ol id="menu-leaderboard-list"></ol>
+      <button id="menu-leaderboard-retry" class="btn" type="button" hidden>Retry leaderboard</button>
+    </details>
+    <p class="desktop-input-notice">Keyboard and mouse required to play. Browse the top 10 below on any device.</p>
     <div class="controls">
       <span><kbd>WASD</kbd> move</span><span><kbd>SHIFT</kbd> sprint</span><span><kbd>SPACE</kbd> jump</span>
       <span><kbd>R</kbd> reload</span><span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> weapons</span>
-      <span><kbd>CLICK</kbd> fire</span>
+      <span><kbd>CLICK</kbd> fire</span><span><kbd>E</kbd> start wave</span><span><kbd>ESC</kbd> controls</span>
     </div>
   </div>
 </div>
+
+<section id="run-controls" class="run-controls" role="dialog" aria-modal="true" aria-labelledby="run-controls-title" hidden>
+  <div class="run-controls__card">
+    <p id="run-countdown" class="run-countdown">GET READY · 30s</p>
+    <h2 id="run-controls-title">Ready when you are.</h2>
+    <p>Explore the station, then start the next wave.</p>
+    <button class="btn btn--primary" id="btn-start-wave" type="button">START WAVE 1 · E</button>
+    <button class="btn" id="btn-resume" type="button">RESUME</button>
+    <div class="speed-controls" aria-label="Simulation speed">
+      <div class="speed-control"><button id="btn-slower" type="button" aria-label="Slower simulation" aria-describedby="slower-tip"><svg aria-hidden="true" viewBox="0 0 576 512" focusable="false"><path fill="currentColor" d="M204.3 43.1C215.9 32 233 28.9 247.7 35.2S272 56 272 72l0 136.3 172.3-165.1C455.9 32 473 28.9 487.7 35.2S512 56 512 72l0 368c0 16-9.6 30.5-24.3 36.8s-31.8 3.2-43.4-7.9L272 303.7 272 440c0 16-9.6 30.5-24.3 36.8s-31.8 3.2-43.4-7.9l-192-184C4.5 277.3 0 266.9 0 256s4.5-21.3 12.3-28.9l192-184z"/></svg></button><span id="slower-tip" class="control-tooltip" role="tooltip">Slower simulation · [</span></div>
+      <output id="run-speed" aria-live="polite">1×</output>
+      <div class="speed-control"><button id="btn-faster" type="button" aria-label="Faster simulation" aria-describedby="faster-tip"><svg aria-hidden="true" viewBox="0 0 576 512" focusable="false"><path fill="currentColor" d="M371.7 43.1C360.1 32 343 28.9 328.3 35.2S304 56 304 72l0 136.3-172.3-165.1C120.1 32 103 28.9 88.3 35.2S64 56 64 72l0 368c0 16 9.6 30.5 24.3 36.8s31.8 3.2 43.4-7.9L304 303.7 304 440c0 16 9.6 30.5 24.3 36.8s31.8 3.2 43.4-7.9l192-184c7.9-7.5 12.3-18 12.3-28.9s-4.5-21.3-12.3-28.9l-192-184z"/></svg></button><span id="faster-tip" class="control-tooltip" role="tooltip">Faster simulation · ]</span></div>
+    </div>
+    <p id="run-controls-status" role="status">The run is paused. Resume to capture the mouse.</p>
+  </div>
+</section>
 
 <!-- ============ GAME OVER ============ -->
 <div id="gameover" class="screen screen--over" hidden>
@@ -105,6 +131,12 @@
     </form>
     <button class="btn btn--primary" id="btn-retry">BACK ON THE PLATFORM</button>
     <button class="btn" id="btn-menu">MAIN MENU</button>
+    <section id="arcade-leaderboard" class="arcade-leaderboard" aria-labelledby="arcade-leaderboard-title">
+      <h2 id="arcade-leaderboard-title">TOP 10 SURVIVORS</h2>
+      <p id="arcade-leaderboard-status" aria-live="polite"></p>
+      <ol id="arcade-leaderboard-list"></ol>
+      <button id="arcade-leaderboard-retry" class="btn" type="button" hidden>Retry leaderboard</button>
+    </section>
   </div>
 </div>
 

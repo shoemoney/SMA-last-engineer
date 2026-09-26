@@ -22,6 +22,7 @@ import { Game, GAME_STATES } from './game/game.js'
 import { CUES } from './audio/cues.js'
 import { initAudio, sound } from './audio/audio.js'
 import { initHUD } from './ui/hud.js'
+import { initRunControls } from './ui/runControls.js'
 import { initMenu } from './ui/menu.js'
 import { initArcadeScore } from './ui/arcadeScore.js'
 import { showGameOver, showLoading, setLoading, showScreen, hideScreens, SCREEN_IDS } from './ui/screens.js'
@@ -193,7 +194,45 @@ await game.warmPipelines()
 // Input
 // ---------------------------------------------------------------------------
 
-const input = new Input(canvas)
+let runControls
+let pendingStartWave = false
+function pauseRun() {
+  if (VERIFY || !game.playing) return
+  pendingStartWave = false
+  input.resetTransient()
+  game.setPaused(true)
+  if (document.pointerLockElement === canvas) document.exitPointerLock?.()
+}
+function captureRun(startWave = false) {
+  if (!game.playing) return
+  if (VERIFY || input.locked) {
+    game.setPaused(false)
+    if (startWave) game.startNextWave()
+    return
+  }
+  pendingStartWave = startWave
+  game.setPaused(true)
+  const failed = () => {
+    pendingStartWave = false
+    runControls?.showError('Mouse look was not enabled. Click Resume to try again.')
+  }
+  try {
+    if (!canvas.requestPointerLock) { failed(); return }
+    canvas.requestPointerLock()?.catch(failed)
+  } catch { failed() }
+}
+const input = new Input(canvas, {
+  onLockChange(locked) {
+    if (VERIFY || !game.playing) return
+    if (!locked) { pauseRun(); return }
+    game.setPaused(false)
+    if (pendingStartWave) game.startNextWave()
+    pendingStartWave = false
+    document.activeElement?.blur?.()
+  },
+  onFocusLost: pauseRun,
+  onCapture: () => captureRun(),
+})
 game.attachInput(input)
 
 if (VERIFY) {
@@ -210,21 +249,41 @@ if (VERIFY) {
 // Front end
 // ---------------------------------------------------------------------------
 
+document.addEventListener('pointerlockerror', () => {
+  if (!game.playing || VERIFY) return
+  pendingStartWave = false
+  game.setPaused(true)
+  runControls?.showError('Mouse look was not enabled. Click Resume to try again.')
+})
+
 const arcadeScore = initArcadeScore()
+runControls = initRunControls({
+  onStartWave: () => captureRun(true),
+  onResume: () => captureRun(),
+  onPause: pauseRun,
+  onSpeedChange: speed => game.setSpeed(speed),
+})
+const heroVideo = document.getElementById('hero-gameplay')
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
+function updateHeroVideo() {
+  if (!heroVideo) return
+  if (reducedMotion.matches || document.hidden || document.getElementById('menu').hidden) heroVideo.pause()
+  else heroVideo.play()?.catch(() => {})
+}
+reducedMotion.addEventListener('change', updateHeroVideo)
+document.addEventListener('visibilitychange', updateHeroVideo)
 const menu = initMenu({
   jeremyMuted: sound.getJeremyMuted(),
   onJeremyMutedChange: (muted) => sound.setJeremyMuted(muted),
   onPlay() {
     arcadeScore.begin()
     game.startRun()
-    if (!VERIFY && !input.locked) {
-      canvas.requestPointerLock?.()?.catch(error => {
-        console.warn('[input] mouse look was not enabled; click to retry', error.message)
-      })
-    }
+    heroVideo?.pause()
+    captureRun()
   },
   onMenu() {
     game.toMenu()
+    updateHeroVideo()
   },
 })
 
@@ -242,6 +301,8 @@ bus.on(EV.STATE_CHANGE, ({ state }) => {
     score: run.score,
     duration: run.duration,
     previousBest: run.previousBest,
+    completedWaves: run.completedWaves,
+    combatSeconds: run.combatSeconds,
   }).catch(err => console.error('[boot] the game-over screen failed to render', err))
 })
 
@@ -256,11 +317,19 @@ globalThis.addEventListener('resize', () => {
 
 const loop = new Loop({
   update: dt => game.update(dt),
-  render: dt => game.render(dt),
+  render: dt => {
+    game.render(dt)
+    const director = game.gameState.director
+    runControls.render({
+      playing: game.playing, paused: game.paused, speed: game.speed,
+      phase: director.state, countdown: director.countdownRemaining,
+    })
+  },
 })
 
 setLoading(1, LOAD.text.ready)
 menu.show()
+updateHeroVideo()
 
 // One simulation step before the first render. player.js derives the camera's vertical FOV
 // and projection from the aspect inside its own update, so without this the first frame is

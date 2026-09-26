@@ -916,24 +916,11 @@ export function initHUD(bus) {
     const tag = document.createElement('i')
     tag.textContent = spec.tag
     const points = document.createElement('span')
-    // EV.SCORE lands immediately after EV.ZOMBIE_DEATH and fills this in. If the scorer is
-    // not wired at all, the row still names the kill rather than printing a lie.
     points.textContent = ''
 
     row.append(name, tag, points)
     pushRow(row)
     return points
-  }
-
-  function bonusRow(label, points) {
-    if (!el.killFeed) return
-    const row = feedRow(HUD.countdownColorHex)
-    const name = document.createElement('b')
-    name.textContent = label
-    const value = document.createElement('span')
-    value.textContent = `+${formatNumber(points)}`
-    row.append(name, value)
-    pushRow(row)
   }
 
   function clearKillFeed() {
@@ -1516,13 +1503,10 @@ export function initHUD(bus) {
    */
   on(EV.COMBAT_CALLOUT, combatCallout)
   on(EV.SCORE, (p = {}) => {
-    readout.score = p.total ?? p.score ?? readout.score
-    paintScore()
-
     if (p.points === undefined) return
     if (p.reason === SCORE_REASON.kill) {
       if (kill.pendingRow) {
-        kill.pendingRow.textContent = `+${formatNumber(p.points)}`
+        kill.pendingRow.textContent = ''
         kill.pendingRow = null
       }
       kill.chain = p.chain ?? kill.chain
@@ -1530,17 +1514,12 @@ export function initHUD(bus) {
       kill.window = SCORE.comboWindow
       paintedWick = NaN
       paintCombo(true)
-    } else if (p.reason === SCORE_REASON.waveClear) {
-      bonusRow('WAVE CLEAR', p.points)
-    } else if (p.reason === SCORE_REASON.noDamageWave) {
-      bonusRow('FLAWLESS', p.points)
     }
   })
 
-  // RUN.STATES names five; the HUD belongs to exactly the two the player is on the platform for.
   on(EV.STATE_CHANGE, (p = {}) => {
     const state = p.state ?? p
-    if (state === 'fight' || state === 'intermission') show()
+    if (state === 'fight' || state === 'intermission' || state === 'preparation') show()
     else hide()
   })
 

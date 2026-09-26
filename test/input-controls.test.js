@@ -8,6 +8,8 @@ function harness() {
   vi.stubGlobal('document', { addEventListener: (type, listener) => listeners.set(type, listener) })
   const canvas = { tagName: 'CANVAS', addEventListener() {} }
   const input = new Input(canvas)
+  document.pointerLockElement = canvas
+  listeners.get('pointerlockchange')()
   const key = (type, code, target) => {
     const event = { code, target, preventDefault: vi.fn() }
     listeners.get(type)(event)
